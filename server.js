@@ -15,11 +15,15 @@ const openai = new OpenAI({
 });
 
 // Configure multer for file uploads
+// Use /tmp directory on Vercel (serverless), otherwise use ./uploads for local
+const uploadDir = process.env.VERCEL || process.env.NOW ? '/tmp' : './uploads';
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
-    const uploadDir = './uploads';
     try {
-      await fs.mkdir(uploadDir, { recursive: true });
+      // /tmp already exists on Vercel, only create directory for local
+      if (!process.env.VERCEL && !process.env.NOW) {
+        await fs.mkdir(uploadDir, { recursive: true });
+      }
       cb(null, uploadDir);
     } catch (error) {
       cb(error);
@@ -367,8 +371,15 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Food Portal running on http://localhost:${PORT}`);
-  console.log(`📝 OpenAI API configured: ${!!process.env.OPENAI_API_KEY}`);
-});
+// Export for Vercel serverless functions
+module.exports = app;
+
+// Only listen if running locally (not on Vercel)
+if (require.main === module) {
+  const port = process.env.PORT || PORT;
+  app.listen(port, () => {
+    console.log(`🚀 Food Portal running on http://localhost:${port}`);
+    console.log(`📝 OpenAI API configured: ${!!process.env.OPENAI_API_KEY}`);
+  });
+}
 
