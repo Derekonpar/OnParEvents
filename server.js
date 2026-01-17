@@ -382,19 +382,25 @@ app.get('/api/health', (req, res) => {
 
 // Catch-all handler: serve index.html for any non-API routes
 // This ensures the SPA works correctly on Vercel
-app.get('*', (req, res, next) => {
-  // Don't handle API routes
+// Use a function to handle all non-API GET requests
+app.use((req, res, next) => {
+  // Don't handle API routes or static files that exist
   if (req.path.startsWith('/api/')) {
     return next();
   }
-  // Serve index.html for all other routes
-  const indexPath = path.join(__dirname, 'public', 'index.html');
-  res.sendFile(indexPath, (err) => {
-    if (err) {
-      console.error('Error sending index.html:', err);
-      res.status(500).send('Error loading page');
-    }
-  });
+  
+  // For GET requests to non-API routes, serve index.html
+  if (req.method === 'GET') {
+    const indexPath = path.join(__dirname, 'public', 'index.html');
+    res.sendFile(indexPath, (err) => {
+      if (err) {
+        console.error('Error sending index.html:', err);
+        res.status(500).send('Error loading page');
+      }
+    });
+  } else {
+    next();
+  }
 });
 
 // Export for Vercel serverless functions
