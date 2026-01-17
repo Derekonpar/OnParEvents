@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>On Par Event Totals - Party Sheet Analyzer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            background: #f8f9ff;
+            margin-bottom: 30px;
+            transition: all 0.3s ease;
+        }
+
+        .upload-area:hover {
+            border-color: #764ba2;
+            background: #f0f2ff;
+        }
+
+        .upload-area.dragover {
+            border-color: #764ba2;
+            background: #e8ebff;
+            transform: scale(1.02);
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .upload-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1em;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 10px;
+        }
+
+        .upload-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .file-list {
+            margin-top: 20px;
+            text-align: left;
+        }
+
+        .file-item {
+            background: white;
+            padding: 10px 15px;
+            margin: 5px 0;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .process-button {
+            background: #28a745;
+            color: white;
+            padding: 15px 40px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.2em;
+            cursor: pointer;
+            margin-top: 20px;
+            width: 100%;
+            transition: background 0.3s;
+        }
+
+        .process-button:hover:not(:disabled) {
+            background: #218838;
+        }
+
+        .process-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .results {
+            margin-top: 30px;
+            display: none;
+        }
+
+        .results.active {
+            display: block;
+        }
+
+        .result-card {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+            border-left: 5px solid #667eea;
+        }
+
+        .result-card h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+
+        .cost-breakdown {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .cost-item {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .cost-item.food {
+            border-top: 4px solid #28a745;
+        }
+
+        .cost-item.drinks {
+            border-top: 4px solid #007bff;
+        }
+
+        .cost-item.entertainment {
+            border-top: 4px solid #ffc107;
+        }
+
+        .cost-item.booking-fee {
+            border-top: 4px solid #dc3545;
+        }
+
+        .cost-item.grand-total {
+            border-top: 4px solid #667eea;
+        }
+
+        .combined-totals {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+        }
+
+        .combined-totals h2 {
+            color: white;
+            margin-bottom: 20px;
+        }
+
+        .line-item-category {
+            margin-top: 25px;
+            margin-bottom: 15px;
+        }
+
+        .line-item-category h5 {
+            color: #333;
+            font-size: 1.1em;
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+            border-bottom: 2px solid #667eea;
+        }
+
+        .line-item-category em {
+            color: #666;
+        }
+
+        .cost-label {
+            font-size: 0.9em;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 5px;
+        }
+
+        .cost-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .line-items {
+            margin-top: 20px;
+        }
+
+        .line-items h4 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .line-item {
+            background: white;
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 8px;
+            border-left: 3px solid #667eea;
+            display: flex;
+            justify-content: space-between;
+            color: #333;
+        }
+
+        .line-item span {
+            color: #333;
+        }
+
+        .line-item strong {
+            color: #333;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 10px 0;
+        }
+
+        .event-details {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+
+        .event-details p {
+            margin: 5px 0;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>On Par Event Totals</h1>
+        <p class="subtitle">Upload party detail sheets to analyze costs and breakdown by category</p>
+
+        <div class="upload-area" id="uploadArea">
+            <p style="font-size: 1.2em; margin-bottom: 20px; color: #666;">
+                📄 Drag and drop PDF or PNG files here or click to browse
+            </p>
+            <p style="color: #999; margin-bottom: 20px;">You can upload up to 10 files at once (PDF or PNG)</p>
+            <button class="upload-button" onclick="document.getElementById('fileInput').click()">
+                Choose Files
+            </button>
+            <input type="file" id="fileInput" multiple accept=".pdf,.png" />
+            <div class="file-list" id="fileList"></div>
+        </div>
+
+        <button class="process-button" id="processButton" onclick="processFiles()" disabled>
+            Analyze Party Sheets
+        </button>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Analyzing party sheets with AI... This may take a moment.</p>
+        </div>
+
+        <div class="results" id="results"></div>
+    </div>
+
+    <script>
+        let selectedFiles = [];
+
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const fileList = document.getElementById('fileList');
+        const processButton = document.getElementById('processButton');
+        const loading = document.getElementById('loading');
+        const results = document.getElementById('results');
+
+        // Drag and drop handlers
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+
+        function handleFiles(files) {
+            const allowedFiles = Array.from(files).filter(file => 
+                file.type === 'application/pdf' || file.type === 'image/png'
+            );
+            
+            if (allowedFiles.length === 0) {
+                alert('Please select PDF or PNG files only');
+                return;
+            }
+
+            if (selectedFiles.length + allowedFiles.length > 10) {
+                alert('Maximum 10 files allowed. Please remove some files first.');
+                return;
+            }
+
+            selectedFiles = [...selectedFiles, ...allowedFiles];
+            updateFileList();
+            processButton.disabled = selectedFiles.length === 0;
+        }
+
+        function updateFileList() {
+            fileList.innerHTML = '';
+            selectedFiles.forEach((file, index) => {
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item';
+                fileItem.innerHTML = `
+                    <span>${file.name}</span>
+                    <button onclick="removeFile(${index})" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">Remove</button>
+                `;
+                fileList.appendChild(fileItem);
+            });
+        }
+
+        function removeFile(index) {
+            selectedFiles.splice(index, 1);
+            updateFileList();
+            processButton.disabled = selectedFiles.length === 0;
+        }
+
+        async function processFiles() {
+            if (selectedFiles.length === 0) return;
+
+            const formData = new FormData();
+            selectedFiles.forEach(file => {
+                formData.append('pdfs', file);
+            });
+
+            processButton.disabled = true;
+            loading.classList.add('active');
+            results.classList.remove('active');
+            results.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Server error');
+                }
+
+                displayResults(data);
+            } catch (error) {
+                results.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+                results.classList.add('active');
+            } finally {
+                processButton.disabled = false;
+                loading.classList.remove('active');
+            }
+        }
+
+        function displayResults(data) {
+            let html = '';
+
+            if (data.summary) {
+                html += `<h2 style="margin-bottom: 20px;">Analysis Summary</h2>`;
+                html += `<p>Total Files: ${data.summary.totalFiles} | Successful: ${data.summary.successful} | Failed: ${data.summary.failed}</p>`;
+            }
+
+            // Show combined totals if multiple files
+            if (data.combinedTotals && data.summary.totalFiles > 1) {
+                const ct = data.combinedTotals;
+                html += `
+                    <div class="combined-totals">
+                        <h2>📊 Combined Totals (All Files)</h2>
+                        <div class="cost-breakdown">
+                            <div class="cost-item food">
+                                <div class="cost-label">Food</div>
+                                <div class="cost-value">$${ct.food.toFixed(2)}</div>
+                            </div>
+                            <div class="cost-item drinks">
+                                <div class="cost-label">Drinks</div>
+                                <div class="cost-value">$${ct.drinks.toFixed(2)}</div>
+                            </div>
+                            <div class="cost-item entertainment">
+                                <div class="cost-label">Entertainment</div>
+                                <div class="cost-value">$${ct.entertainment.toFixed(2)}</div>
+                            </div>
+                            <div class="cost-item booking-fee">
+                                <div class="cost-label">Booking Fee</div>
+                                <div class="cost-value">$${ct.bookingFee.toFixed(2)}</div>
+                            </div>
+                            <div class="cost-item grand-total">
+                                <div class="cost-label">Grand Total</div>
+                                <div class="cost-value">$${ct.grandTotal.toFixed(2)}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            data.results.forEach((result, index) => {
+                if (result.error) {
+                    html += `
+                        <div class="result-card">
+                            <h3>${result.filename}</h3>
+                            <div class="error">Error: ${result.error}</div>
+                        </div>
+                    `;
+                } else {
+                    const b = result.breakdown;
+                    html += `
+                        <div class="result-card">
+                            <h3>${result.filename}</h3>
+                            
+                            ${b.eventDetails && Object.keys(b.eventDetails).length > 0 ? `
+                                <div class="event-details">
+                                    <h4>Event Details</h4>
+                                    ${b.eventDetails.eventName ? `<p><strong>Event:</strong> ${b.eventDetails.eventName}</p>` : ''}
+                                    ${b.eventDetails.date ? `<p><strong>Date:</strong> ${b.eventDetails.date}</p>` : ''}
+                                    ${b.eventDetails.time ? `<p><strong>Time:</strong> ${b.eventDetails.time}</p>` : ''}
+                                    ${b.eventDetails.guests ? `<p><strong>Guests:</strong> ${b.eventDetails.guests}</p>` : ''}
+                                    ${b.eventDetails.contact ? `<p><strong>Contact:</strong> ${b.eventDetails.contact}</p>` : ''}
+                                </div>
+                            ` : ''}
+
+                            <div class="cost-breakdown">
+                                <div class="cost-item food">
+                                    <div class="cost-label">Food</div>
+                                    <div class="cost-value">$${b.food.toFixed(2)}</div>
+                                </div>
+                                <div class="cost-item drinks">
+                                    <div class="cost-label">Drinks</div>
+                                    <div class="cost-value">$${b.drinks.toFixed(2)}</div>
+                                </div>
+                                <div class="cost-item entertainment">
+                                    <div class="cost-label">Entertainment</div>
+                                    <div class="cost-value">$${b.entertainment.toFixed(2)}</div>
+                                </div>
+                                <div class="cost-item booking-fee">
+                                    <div class="cost-label">Booking Fee</div>
+                                    <div class="cost-value">$${(b.bookingFee || 0).toFixed(2)}</div>
+                                </div>
+                                <div class="cost-item grand-total">
+                                    <div class="cost-label">Grand Total</div>
+                                    <div class="cost-value">$${b.grandTotal.toFixed(2)}</div>
+                                </div>
+                            </div>
+
+                            ${b.preloadedDrinks ? `
+                                <div style="background: #fff3cd; padding: 10px; border-radius: 8px; margin: 15px 0;">
+                                    <strong>Preloaded Drinks:</strong> ${b.preloadedDrinks.quantity} × $${b.preloadedDrinks.pricePerPerson} = $${b.preloadedDrinks.total}
+                                    <br><small>This amount was subtracted from food and added to drinks.</small>
+                                </div>
+                            ` : ''}
+
+                            <div class="line-items">
+                                <h4>Line Items Breakdown</h4>
+                                ${(() => {
+                                    const itemsToDisplay = b.lineItems && b.lineItems.length > 0 
+                                        ? b.lineItems 
+                                        : (result.rawAnalysis && result.rawAnalysis.lineItems && result.rawAnalysis.lineItems.length > 0 
+                                            ? result.rawAnalysis.lineItems 
+                                            : null);
+                                    
+                                    if (itemsToDisplay && itemsToDisplay.length > 0) {
+                                        return groupLineItemsByCategory(itemsToDisplay);
+                                    } else {
+                                        return '<p style="color: #999; font-style: italic;">No line items found. Check browser console for details.</p>';
+                                    }
+                                })()}
+                                ${b.lineItems && b.lineItems.length > 0 ? `
+                                    <details style="margin-top: 15px;">
+                                        <summary style="cursor: pointer; color: #666; font-size: 0.9em;">🔍 Debug: View Raw Line Items Data</summary>
+                                        <pre style="background: #f5f5f5; padding: 10px; border-radius: 5px; overflow-x: auto; margin-top: 10px; font-size: 0.85em;">${JSON.stringify(b.lineItems, null, 2)}</pre>
+                                    </details>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `;
+                }
+            });
+
+            results.innerHTML = html;
+            results.classList.add('active');
+        }
+
+        function groupLineItemsByCategory(lineItems) {
+            console.log('groupLineItemsByCategory called with:', lineItems);
+            
+            if (!lineItems || !Array.isArray(lineItems) || lineItems.length === 0) {
+                console.log('No line items or empty array');
+                return '<p style="color: #999; font-style: italic;">No line items available</p>';
+            }
+
+            console.log('Processing', lineItems.length, 'line items');
+
+            const categories = {
+                'FOOD': { items: [], total: 0 },
+                'DRINKS': { items: [], total: 0 },
+                'ENTERTAINMENT': { items: [], total: 0 },
+                'BOOKING_FEE': { items: [], total: 0 }
+            };
+
+            lineItems.forEach(item => {
+                if (!item) return;
+                
+                const cat = (item.category || '').toUpperCase();
+                const amount = parseFloat(item.total) || 0;
+                
+                if (categories[cat]) {
+                    categories[cat].items.push(item);
+                    categories[cat].total += amount;
+                } else {
+                    // If category doesn't match, try to infer from description
+                    const desc = (item.description || '').toLowerCase();
+                    if (desc.includes('food') || desc.includes('taco') || desc.includes('front nine') || 
+                        desc.includes('wing') || desc.includes('tater') || desc.includes('pretzel') || 
+                        desc.includes('salad') || desc.includes('vegetable') || desc.includes('tender') || 
+                        desc.includes('cookie') || desc.includes('sauce') || desc.includes('fry') || 
+                        desc.includes('cheese') || desc.includes('platter')) {
+                        categories['FOOD'].items.push(item);
+                        categories['FOOD'].total += amount;
+                    } else if (desc.includes('drink') || desc.includes('back nine') || desc.includes('bracelet')) {
+                        categories['DRINKS'].items.push(item);
+                        categories['DRINKS'].total += amount;
+                    } else if (desc.includes('bowling') || desc.includes('dart') || desc.includes('karaoke') || desc.includes('shuffleboard') || desc.includes('mini golf')) {
+                        categories['ENTERTAINMENT'].items.push(item);
+                        categories['ENTERTAINMENT'].total += amount;
+                    } else if (desc.includes('booking') || desc.includes('fee')) {
+                        categories['BOOKING_FEE'].items.push(item);
+                        categories['BOOKING_FEE'].total += amount;
+                    }
+                }
+            });
+
+            let html = '';
+            const categoryLabels = {
+                'FOOD': '🍽️ Food Items',
+                'DRINKS': '🥤 Drink Items',
+                'ENTERTAINMENT': '🎳 Entertainment Items',
+                'BOOKING_FEE': '📋 Booking Fees'
+            };
+
+            Object.keys(categories).forEach(category => {
+                const categoryData = categories[category];
+                console.log(`Processing category ${category}: ${categoryData.items.length} items`);
+                
+                if (categoryData.items.length > 0) {
+                    const itemsHtml = categoryData.items.map(item => {
+                        const desc = item.description || 'Unknown Item';
+                        const qty = item.quantity !== undefined && item.quantity !== null ? item.quantity : '';
+                        const unitPrice = item.unitPrice !== undefined && item.unitPrice !== null ? parseFloat(item.unitPrice) : null;
+                        const total = parseFloat(item.total) || 0;
+                        const notes = item.notes || '';
+                        
+                        return `
+                            <div class="line-item">
+                                <span>
+                                    <strong>${desc}</strong>
+                                    ${qty ? ` - Qty: ${qty}` : ''}
+                                    ${unitPrice !== null ? ` @ $${unitPrice.toFixed(2)}` : ''}
+                                    ${notes ? ` <em>(${notes})</em>` : ''}
+                                </span>
+                                <span><strong>$${total.toFixed(2)}</strong></span>
+                            </div>
+                        `;
+                    }).join('');
+                    
+                    html += `
+                        <div class="line-item-category">
+                            <h5>${categoryLabels[category] || category} (Total: $${categoryData.total.toFixed(2)})</h5>
+                            ${itemsHtml}
+                        </div>
+                    `;
+                }
+            });
+
+            if (!html) {
+                html = '<p style="color: #999; font-style: italic;">Line items found but could not be categorized. Check console for details.</p>';
+            }
+
+            return html;
+        }
+    </script>
+</body>
+</html>
+
