@@ -380,6 +380,17 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Catch-all handler: serve index.html for any non-API routes
+// This ensures the SPA works correctly
+app.get('*', (req, res, next) => {
+  // Don't handle API routes
+  if (req.path.startsWith('/api/')) {
+    return next();
+  }
+  // Serve index.html for all other routes
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 // Export for Vercel serverless functions
 // Export as a handler function for better Vercel compatibility
 module.exports = app;
