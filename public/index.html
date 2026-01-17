@@ -454,10 +454,36 @@
                                 <div class="cost-label">Drinks</div>
                                 <div class="cost-value">$${ct.drinks.toFixed(2)}</div>
                             </div>
+                            ${ct.bowling > 0 ? `
                             <div class="cost-item entertainment">
-                                <div class="cost-label">Entertainment</div>
-                                <div class="cost-value">$${ct.entertainment.toFixed(2)}</div>
+                                <div class="cost-label">Bowling</div>
+                                <div class="cost-value">$${ct.bowling.toFixed(2)}</div>
                             </div>
+                            ` : ''}
+                            ${ct.darts > 0 ? `
+                            <div class="cost-item entertainment">
+                                <div class="cost-label">Darts</div>
+                                <div class="cost-value">$${ct.darts.toFixed(2)}</div>
+                            </div>
+                            ` : ''}
+                            ${ct.miniGolf > 0 ? `
+                            <div class="cost-item entertainment">
+                                <div class="cost-label">Mini Golf</div>
+                                <div class="cost-value">$${ct.miniGolf.toFixed(2)}</div>
+                            </div>
+                            ` : ''}
+                            ${ct.shuffleboard > 0 ? `
+                            <div class="cost-item entertainment">
+                                <div class="cost-label">Shuffleboard</div>
+                                <div class="cost-value">$${ct.shuffleboard.toFixed(2)}</div>
+                            </div>
+                            ` : ''}
+                            ${ct.karaoke > 0 ? `
+                            <div class="cost-item entertainment">
+                                <div class="cost-label">Karaoke</div>
+                                <div class="cost-value">$${ct.karaoke.toFixed(2)}</div>
+                            </div>
+                            ` : ''}
                             <div class="cost-item booking-fee">
                                 <div class="cost-label">Booking Fee</div>
                                 <div class="cost-value">$${ct.bookingFee.toFixed(2)}</div>
@@ -570,7 +596,13 @@
             const categories = {
                 'FOOD': { items: [], total: 0 },
                 'DRINKS': { items: [], total: 0 },
-                'ENTERTAINMENT': { items: [], total: 0 },
+                'BOWLING': { items: [], total: 0 },
+                'DARTS': { items: [], total: 0 },
+                'MINI_GOLF': { items: [], total: 0 },
+                'SHUFFLEBOARD': { items: [], total: 0 },
+                'KARAOKE': { items: [], total: 0 },
+                'OTHER_ENTERTAINMENT': { items: [], total: 0 },
+                'ENTERTAINMENT': { items: [], total: 0 }, // Legacy support
                 'BOOKING_FEE': { items: [], total: 0 }
             };
 
@@ -610,7 +642,13 @@
             const categoryLabels = {
                 'FOOD': '🍽️ Food Items',
                 'DRINKS': '🥤 Drink Items',
-                'ENTERTAINMENT': '🎳 Entertainment Items',
+                'BOWLING': '🎳 Bowling',
+                'DARTS': '🎯 Darts',
+                'MINI_GOLF': '⛳ Mini Golf',
+                'SHUFFLEBOARD': '🎲 Shuffleboard',
+                'KARAOKE': '🎤 Karaoke',
+                'OTHER_ENTERTAINMENT': '🎪 Other Entertainment',
+                'ENTERTAINMENT': '🎳 Entertainment Items', // Legacy
                 'BOOKING_FEE': '📋 Booking Fees'
             };
 

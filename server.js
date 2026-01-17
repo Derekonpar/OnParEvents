@@ -82,7 +82,13 @@ async function analyzePartySheet(filePath, mimeType) {
              - Food platters: wings, tater kegs, pretzel bites, garden salad, vegetable trays, chicken tenders, cookies, sauces, loaded fries, beer cheese, and any other food items
              - Each food platter item should be listed as a separate line item with its quantity, price, and total
           2. DRINKS - drink packages like "Back Nine", preloaded RFID amounts, drink bracelets, preloaded drinks
-          3. ENTERTAINMENT - bowling, darts, duckpin bowling, karaoke, shuffleboard, mini golf, and similar activities
+          3. ENTERTAINMENT - categorize each entertainment item specifically:
+             - BOWLING - bowling lanes, duckpin bowling
+             - DARTS - darts lanes, dart games
+             - MINI_GOLF - mini golf
+             - SHUFFLEBOARD - shuffleboard
+             - KARAOKE - karaoke
+             - OTHER_ENTERTAINMENT - any other entertainment items
           4. BOOKING_FEE - any booking fees, setup fees, or administrative charges
           
           IMPORTANT RULES FOR COST BREAKDOWN:
@@ -121,7 +127,7 @@ async function analyzePartySheet(filePath, mimeType) {
                 "quantity": number,
                 "unitPrice": number,
                 "total": number,
-                "category": "FOOD" | "DRINKS" | "ENTERTAINMENT" | "BOOKING_FEE",
+                "category": "FOOD" | "DRINKS" | "BOWLING" | "DARTS" | "MINI_GOLF" | "SHUFFLEBOARD" | "KARAOKE" | "OTHER_ENTERTAINMENT" | "BOOKING_FEE",
                 "notes": "string or null"
               }
             ],
@@ -232,21 +238,38 @@ async function analyzePartySheet(filePath, mimeType) {
 function processCostBreakdown(analysisResult) {
   let foodTotal = 0;
   let drinksTotal = 0;
-  let entertainmentTotal = 0;
+  let bowlingTotal = 0;
+  let dartsTotal = 0;
+  let miniGolfTotal = 0;
+  let shuffleboardTotal = 0;
+  let karaokeTotal = 0;
+  let otherEntertainmentTotal = 0;
   let bookingFeeTotal = 0;
 
   // Process line items
   if (analysisResult.lineItems && Array.isArray(analysisResult.lineItems)) {
     analysisResult.lineItems.forEach(item => {
       const amount = item.total || 0;
+      const category = item.category || '';
       
-      if (item.category === 'FOOD') {
+      if (category === 'FOOD') {
         foodTotal += amount;
-      } else if (item.category === 'DRINKS') {
+      } else if (category === 'DRINKS') {
         drinksTotal += amount;
-      } else if (item.category === 'ENTERTAINMENT') {
-        entertainmentTotal += amount;
-      } else if (item.category === 'BOOKING_FEE') {
+      } else if (category === 'BOWLING') {
+        bowlingTotal += amount;
+      } else if (category === 'DARTS') {
+        dartsTotal += amount;
+      } else if (category === 'MINI_GOLF') {
+        miniGolfTotal += amount;
+      } else if (category === 'SHUFFLEBOARD') {
+        shuffleboardTotal += amount;
+      } else if (category === 'KARAOKE') {
+        karaokeTotal += amount;
+      } else if (category === 'OTHER_ENTERTAINMENT' || category === 'ENTERTAINMENT') {
+        // Handle legacy ENTERTAINMENT category or other entertainment
+        otherEntertainmentTotal += amount;
+      } else if (category === 'BOOKING_FEE') {
         bookingFeeTotal += amount;
       }
     });
@@ -259,16 +282,16 @@ function processCostBreakdown(analysisResult) {
     drinksTotal += preloadedAmount;
   }
 
-  // Also check if totals are provided directly
+  // Calculate total entertainment for backward compatibility
+  const entertainmentTotal = bowlingTotal + dartsTotal + miniGolfTotal + shuffleboardTotal + karaokeTotal + otherEntertainmentTotal;
+
+  // Also check if totals are provided directly (legacy support)
   if (analysisResult.totals) {
     if (analysisResult.totals.food !== undefined) {
       foodTotal = analysisResult.totals.food;
     }
     if (analysisResult.totals.drinks !== undefined) {
       drinksTotal = analysisResult.totals.drinks;
-    }
-    if (analysisResult.totals.entertainment !== undefined) {
-      entertainmentTotal = analysisResult.totals.entertainment;
     }
     if (analysisResult.totals.bookingFee !== undefined) {
       bookingFeeTotal = analysisResult.totals.bookingFee;
@@ -280,7 +303,13 @@ function processCostBreakdown(analysisResult) {
   return {
     food: parseFloat(foodTotal.toFixed(2)),
     drinks: parseFloat(drinksTotal.toFixed(2)),
-    entertainment: parseFloat(entertainmentTotal.toFixed(2)),
+    bowling: parseFloat(bowlingTotal.toFixed(2)),
+    darts: parseFloat(dartsTotal.toFixed(2)),
+    miniGolf: parseFloat(miniGolfTotal.toFixed(2)),
+    shuffleboard: parseFloat(shuffleboardTotal.toFixed(2)),
+    karaoke: parseFloat(karaokeTotal.toFixed(2)),
+    otherEntertainment: parseFloat(otherEntertainmentTotal.toFixed(2)),
+    entertainment: parseFloat(entertainmentTotal.toFixed(2)), // Total for backward compatibility
     bookingFee: parseFloat(bookingFeeTotal.toFixed(2)),
     grandTotal: parseFloat(grandTotal.toFixed(2)),
     lineItems: analysisResult.lineItems || [],
@@ -348,11 +377,19 @@ app.post('/api/upload', upload.array('pdfs', 10), async (req, res) => {
         return {
           food: totals.food + (result.breakdown.food || 0),
           drinks: totals.drinks + (result.breakdown.drinks || 0),
-          entertainment: totals.entertainment + (result.breakdown.entertainment || 0),
+          bowling: totals.bowling + (result.breakdown.bowling || 0),
+          darts: totals.darts + (result.breakdown.darts || 0),
+          miniGolf: totals.miniGolf + (result.breakdown.miniGolf || 0),
+          shuffleboard: totals.shuffleboard + (result.breakdown.shuffleboard || 0),
+          karaoke: totals.karaoke + (result.breakdown.karaoke || 0),
+          otherEntertainment: totals.otherEntertainment + (result.breakdown.otherEntertainment || 0),
           bookingFee: totals.bookingFee + (result.breakdown.bookingFee || 0),
           grandTotal: totals.grandTotal + (result.breakdown.grandTotal || 0)
         };
-      }, { food: 0, drinks: 0, entertainment: 0, bookingFee: 0, grandTotal: 0 });
+      }, { food: 0, drinks: 0, bowling: 0, darts: 0, miniGolf: 0, shuffleboard: 0, karaoke: 0, otherEntertainment: 0, bookingFee: 0, grandTotal: 0 });
+
+    // Calculate total entertainment
+    const totalEntertainment = combinedTotals.bowling + combinedTotals.darts + combinedTotals.miniGolf + combinedTotals.shuffleboard + combinedTotals.karaoke + combinedTotals.otherEntertainment;
 
     res.json({
       success: true,
@@ -360,7 +397,13 @@ app.post('/api/upload', upload.array('pdfs', 10), async (req, res) => {
       combinedTotals: {
         food: parseFloat(combinedTotals.food.toFixed(2)),
         drinks: parseFloat(combinedTotals.drinks.toFixed(2)),
-        entertainment: parseFloat(combinedTotals.entertainment.toFixed(2)),
+        bowling: parseFloat(combinedTotals.bowling.toFixed(2)),
+        darts: parseFloat(combinedTotals.darts.toFixed(2)),
+        miniGolf: parseFloat(combinedTotals.miniGolf.toFixed(2)),
+        shuffleboard: parseFloat(combinedTotals.shuffleboard.toFixed(2)),
+        karaoke: parseFloat(combinedTotals.karaoke.toFixed(2)),
+        otherEntertainment: parseFloat(combinedTotals.otherEntertainment.toFixed(2)),
+        entertainment: parseFloat(totalEntertainment.toFixed(2)), // Total for reference
         bookingFee: parseFloat(combinedTotals.bookingFee.toFixed(2)),
         grandTotal: parseFloat(combinedTotals.grandTotal.toFixed(2))
       },
