@@ -38,10 +38,13 @@ const upload = multer({
   storage: storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   fileFilter: (req, file, cb) => {
-    if (file.mimetype === 'application/pdf' || file.mimetype === 'image/png') {
+    if (file.mimetype === 'application/pdf' || 
+        file.mimetype === 'image/png' || 
+        file.mimetype === 'image/jpeg' || 
+        file.mimetype === 'image/jpg') {
       cb(null, true);
     } else {
-      cb(new Error('Only PDF and PNG files are allowed'));
+      cb(new Error('Only PDF, PNG, and JPEG files are allowed'));
     }
   }
 });
@@ -157,9 +160,10 @@ async function analyzePartySheet(filePath, mimeType) {
           ]
         }
       ];
-    } else if (mimeType === 'image/png') {
-      // Handle PNG: use Vision API
+    } else if (mimeType === 'image/png' || mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
+      // Handle images (PNG, JPEG): use Vision API
       const base64Image = await imageToBase64(filePath);
+      const imageMimeType = mimeType === 'image/jpeg' || mimeType === 'image/jpg' ? 'image/jpeg' : 'image/png';
       messages = [
         {
           role: "system",
@@ -175,7 +179,7 @@ async function analyzePartySheet(filePath, mimeType) {
             {
               type: "image_url",
               image_url: {
-                url: `data:image/png;base64,${base64Image}`
+                url: `data:${imageMimeType};base64,${base64Image}`
               }
             }
           ]
@@ -285,7 +289,7 @@ function processCostBreakdown(analysisResult) {
   };
 }
 
-// Upload endpoint - accepts up to 10 PDFs or PNGs
+// Upload endpoint - accepts up to 10 PDFs, PNGs, or JPEGs
 app.post('/api/upload', upload.array('pdfs', 10), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {

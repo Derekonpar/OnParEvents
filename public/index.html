@@ -302,13 +302,13 @@
 
         <div class="upload-area" id="uploadArea">
             <p style="font-size: 1.2em; margin-bottom: 20px; color: #666;">
-                📄 Drag and drop PDF or PNG files here or click to browse
+                📄 Drag and drop PDF or image files here or click to browse
             </p>
-            <p style="color: #999; margin-bottom: 20px;">You can upload up to 10 files at once (PDF or PNG)</p>
+            <p style="color: #999; margin-bottom: 20px;">You can upload up to 10 files at once (PDF, PNG, or JPEG)</p>
             <button class="upload-button" onclick="document.getElementById('fileInput').click()">
                 Choose Files
             </button>
-            <input type="file" id="fileInput" multiple accept=".pdf,.png" />
+            <input type="file" id="fileInput" multiple accept=".pdf,.png,.jpg,.jpeg" />
             <div class="file-list" id="fileList"></div>
         </div>
 
@@ -356,11 +356,14 @@
 
         function handleFiles(files) {
             const allowedFiles = Array.from(files).filter(file => 
-                file.type === 'application/pdf' || file.type === 'image/png'
+                file.type === 'application/pdf' || 
+                file.type === 'image/png' || 
+                file.type === 'image/jpeg' || 
+                file.type === 'image/jpg'
             );
             
             if (allowedFiles.length === 0) {
-                alert('Please select PDF or PNG files only');
+                alert('Please select PDF, PNG, or JPEG files only');
                 return;
             }
 
