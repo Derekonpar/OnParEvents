@@ -47,7 +47,7 @@ const upload = multer({
 });
 
 // Serve static files
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Convert PDF to base64 for OpenAI Vision API
 async function pdfToBase64(pdfPath) {
@@ -381,14 +381,20 @@ app.get('/api/health', (req, res) => {
 });
 
 // Catch-all handler: serve index.html for any non-API routes
-// This ensures the SPA works correctly
+// This ensures the SPA works correctly on Vercel
 app.get('*', (req, res, next) => {
   // Don't handle API routes
   if (req.path.startsWith('/api/')) {
     return next();
   }
   // Serve index.html for all other routes
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  const indexPath = path.join(__dirname, 'public', 'index.html');
+  res.sendFile(indexPath, (err) => {
+    if (err) {
+      console.error('Error sending index.html:', err);
+      res.status(500).send('Error loading page');
+    }
+  });
 });
 
 // Export for Vercel serverless functions
