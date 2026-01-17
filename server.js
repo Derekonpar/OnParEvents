@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
-const pdfjsLib = require('pdfjs-dist/build/pdf.js');
+const pdfParse = require('pdf-parse');
 const OpenAI = require('openai');
 require('dotenv').config();
 
@@ -50,34 +50,27 @@ const upload = multer({
 // Serve static files
 app.use(express.static('public'));
 
-// Extract text from PDF using pdfjs-dist (serverless-friendly)
+// Extract text from PDF using pdf-parse
+// Note: pdf-parse may have canvas warnings but should work for text extraction
 async function extractTextFromPDF(pdfPath) {
   try {
     const pdfBuffer = await fs.readFile(pdfPath);
-    
-    // For serverless, disable worker
-    const loadingTask = pdfjsLib.getDocument({
-      data: pdfBuffer,
-      useSystemFonts: true,
-      disableFontFace: true,
-      verbosity: 0
+    // Suppress canvas warnings by setting environment variable
+    process.env.PDF_PARSE_NO_CANVAS = 'true';
+    const data = await pdfParse(pdfBuffer, {
+      // Options to avoid canvas dependency issues
+      max: 0, // Don't parse images
     });
-    
-    const pdf = await loadingTask.promise;
-    
-    let fullText = '';
-    
-    // Extract text from all pages
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items.map(item => item.str).join(' ');
-      fullText += pageText + '\n';
-    }
-    
-    return fullText;
+    return data.text || '';
   } catch (error) {
-    throw new Error(`Error reading PDF: ${error.message}`);
+    // If pdf-parse fails, try without options
+    try {
+      const pdfBuffer = await fs.readFile(pdfPath);
+      const data = await pdfParse(pdfBuffer);
+      return data.text || '';
+    } catch (retryError) {
+      throw new Error(`Error reading PDF: ${retryError.message}`);
+    }
   }
 }
 
