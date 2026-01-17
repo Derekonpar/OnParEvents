@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
-const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+const pdfjsLib = require('pdfjs-dist/build/pdf.js');
 const OpenAI = require('openai');
 require('dotenv').config();
 
@@ -54,7 +54,15 @@ app.use(express.static('public'));
 async function extractTextFromPDF(pdfPath) {
   try {
     const pdfBuffer = await fs.readFile(pdfPath);
-    const loadingTask = pdfjsLib.getDocument({ data: pdfBuffer });
+    
+    // For serverless, disable worker
+    const loadingTask = pdfjsLib.getDocument({
+      data: pdfBuffer,
+      useSystemFonts: true,
+      disableFontFace: true,
+      verbosity: 0
+    });
+    
     const pdf = await loadingTask.promise;
     
     let fullText = '';
