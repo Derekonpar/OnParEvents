@@ -372,10 +372,12 @@ app.get('/api/health', (req, res) => {
 });
 
 // Export for Vercel serverless functions
+// For Vercel, export the app directly - @vercel/node will handle it
 module.exports = app;
 
 // Only listen if running locally (not on Vercel)
-if (require.main === module) {
+// Vercel doesn't call app.listen(), it uses serverless functions
+if (!process.env.VERCEL && !process.env.NOW) {
   const port = process.env.PORT || PORT;
   app.listen(port, () => {
     console.log(`🚀 Food Portal running on http://localhost:${port}`);
