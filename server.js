@@ -372,7 +372,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // Export for Vercel serverless functions
-// For Vercel, export the app directly - @vercel/node will handle it
+// Export as a handler function for better Vercel compatibility
 module.exports = app;
 
 // Only listen if running locally (not on Vercel)
