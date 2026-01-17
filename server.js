@@ -2,7 +2,6 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
-const pdfParse = require('pdf-parse');
 const OpenAI = require('openai');
 require('dotenv').config();
 
@@ -50,27 +49,13 @@ const upload = multer({
 // Serve static files
 app.use(express.static('public'));
 
-// Extract text from PDF using pdf-parse
-// Note: pdf-parse may have canvas warnings but should work for text extraction
-async function extractTextFromPDF(pdfPath) {
+// Convert PDF to base64 for OpenAI Vision API
+async function pdfToBase64(pdfPath) {
   try {
     const pdfBuffer = await fs.readFile(pdfPath);
-    // Suppress canvas warnings by setting environment variable
-    process.env.PDF_PARSE_NO_CANVAS = 'true';
-    const data = await pdfParse(pdfBuffer, {
-      // Options to avoid canvas dependency issues
-      max: 0, // Don't parse images
-    });
-    return data.text || '';
+    return pdfBuffer.toString('base64');
   } catch (error) {
-    // If pdf-parse fails, try without options
-    try {
-      const pdfBuffer = await fs.readFile(pdfPath);
-      const data = await pdfParse(pdfBuffer);
-      return data.text || '';
-    } catch (retryError) {
-      throw new Error(`Error reading PDF: ${retryError.message}`);
-    }
+    throw new Error(`Error reading PDF: ${error.message}`);
   }
 }
 
@@ -149,8 +134,8 @@ async function analyzePartySheet(filePath, mimeType) {
     let messages;
 
     if (mimeType === 'application/pdf') {
-      // Handle PDF: extract text first
-      const pdfText = await extractTextFromPDF(filePath);
+      // Handle PDF: use Vision API (same as PNG)
+      const base64Pdf = await pdfToBase64(filePath);
       messages = [
         {
           role: "system",
@@ -158,7 +143,18 @@ async function analyzePartySheet(filePath, mimeType) {
         },
         {
           role: "user",
-          content: `Analyze this party event contract PDF text and extract the financial breakdown:\n\n${pdfText}`
+          content: [
+            {
+              type: "text",
+              text: "Analyze this party event contract PDF and extract the financial breakdown:"
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:application/pdf;base64,${base64Pdf}`
+              }
+            }
+          ]
         }
       ];
     } else if (mimeType === 'image/png') {
