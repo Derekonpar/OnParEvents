@@ -16,23 +16,6 @@ The user needs a localhost npm tool that:
    - **Back Nine**: Drinks only (shows preloaded RFID amount)
    - **Full Course**: Food + Drinks (need to subtract drink costs from total to get food spend)
 
-### New Feature: Vendor Cost Management
-
-The user now wants to add a new tab called "Vendor Cost Management" that:
-1. Accepts Excel files from different suppliers/vendors (multiple files can be uploaded)
-2. Each Excel file may have different column structures/headers
-3. Extracts key data from each Excel file:
-   - Product description/name
-   - Unit price
-   - Date (date of ordering/invoice)
-4. Compares extracted data to a main reference sheet that contains line items by product name
-5. Matches invoices by date of ordering (not all items may appear in every invoice)
-6. Outputs:
-   - Same reference columns with prices for each item scraped from uploaded sheets
-   - Data organized/stored by date
-   - For each product item: a line plot showing prices over time
-   - Average price displayed underneath each plot
-
 ### Key Business Logic
 - When a line item is "Full Course" for X people with $Y drink bracelets, the total includes both food and drinks
 - To get food spend: Total - (X * Y) = Food Amount
@@ -59,27 +42,6 @@ The user now wants to add a new tab called "Vendor Cost Management" that:
    - Food items with pan sizes and quantities
    - Entertainment items (separated)
    - Financial breakdown (Food total, Drinks total, Entertainment total)
-
-### Vendor Cost Management Challenges
-
-1. **Excel File Parsing**: Need to handle Excel files (.xlsx, .xls) with varying column structures
-   - Different suppliers may use different column names/headers
-   - Need to intelligently identify: product description, unit price, date columns
-   - May need to use OpenAI to help identify column mappings for each file
-2. **Data Normalization**: 
-   - Match product names across different files (may have slight variations in naming)
-   - Handle date parsing from various formats
-   - Normalize price formats (currency symbols, decimals, etc.)
-3. **Main Reference Sheet**: 
-   - Need to upload/define a main sheet with reference product names
-   - Match extracted products to reference products (fuzzy matching may be needed)
-4. **Data Storage by Date**: 
-   - Organize all extracted prices by date
-   - Track which supplier/file each price came from
-5. **Visualization**: 
-   - Generate line plots for each product showing price over time
-   - Calculate and display average price for each product
-   - Use a charting library (Chart.js, D3.js, or similar)
 
 ## High-level Task Breakdown
 
@@ -136,42 +98,19 @@ The user now wants to add a new tab called "Vendor Cost Management" that:
 - [ ] Handle errors gracefully
 - **Success Criteria**: User-friendly interface, clear feedback, exportable results
 
-### Phase 8: Vendor Cost Management Feature
-- [ ] Add tab navigation to UI (Party Sheet Analyzer + Vendor Cost Management)
-- [ ] Install Excel parsing library (xlsx, exceljs, or similar)
-- [ ] Create Excel file upload endpoint (accepts .xlsx, .xls files)
-- [ ] Implement main reference sheet upload/definition
-- [ ] Create OpenAI prompt to identify column mappings (product description, unit price, date) from Excel files
-- [ ] Parse Excel files and extract: product description, unit price, date
-- [ ] Normalize product names (fuzzy matching against reference sheet)
-- [ ] Normalize dates and prices
-- [ ] Store extracted data organized by date
-- [ ] Match products to reference sheet items
-- [ ] Install charting library (Chart.js recommended)
-- [ ] Create visualization component for price trends (line plots per product)
-- [ ] Calculate and display average price for each product
-- [ ] Create UI for Vendor Cost Management tab with:
-  - Upload area for main reference sheet
-  - Upload area for vendor Excel files (multiple)
-  - Results display with product list
-  - Price trend charts for each product
-  - Average prices displayed
-- **Success Criteria**: Can upload Excel files, extract product/price/date data, match to reference sheet, display price trends over time with averages
-
 ## Project Status Board
 
-- [x] Phase 1: Project Setup
-- [x] Phase 2: File Upload System
-- [x] Phase 3: OpenAI Integration
-- [x] Phase 4: Food Conversion Logic
-- [x] Phase 5: Financial Calculations
-- [x] Phase 6: Output Generation
-- [x] Phase 7: UI/UX Polish
-- [ ] Phase 8: Vendor Cost Management Feature
+- [ ] Phase 1: Project Setup
+- [ ] Phase 2: File Upload System
+- [ ] Phase 3: OpenAI Integration
+- [ ] Phase 4: Food Conversion Logic
+- [ ] Phase 5: Financial Calculations
+- [ ] Phase 6: Output Generation
+- [ ] Phase 7: UI/UX Polish
 
 ## Current Status / Progress Tracking
 
-**Current Phase**: Phase 8 Complete - Vendor Cost Management Feature Implemented
+**Current Phase**: Phase 1-6 Complete - Enhanced with Line Items & Combined Totals
 
 **Completed**:
 - ✅ Initialized npm project with all dependencies
@@ -185,16 +124,6 @@ The user now wants to add a new tab called "Vendor Cost Management" that:
 - ✅ Added detailed line items breakdown (grouped by category)
 - ✅ Added combined totals across all files when multiple files uploaded
 - ✅ Enhanced entertainment item detection (bowling, darts, karaoke, shuffleboard, mini golf)
-- ✅ **NEW**: Added tab navigation (Party Sheet Analyzer + Vendor Cost Management)
-- ✅ **NEW**: Installed exceljs and Chart.js dependencies
-- ✅ **NEW**: Created Excel file upload endpoint (`/api/vendor-costs`)
-- ✅ **NEW**: Implemented OpenAI-based column identification for Excel files
-- ✅ **NEW**: Created main reference sheet upload functionality
-- ✅ **NEW**: Implemented fuzzy product name matching
-- ✅ **NEW**: Organized extracted data by date and product
-- ✅ **NEW**: Created Vendor Cost Management UI tab with upload areas
-- ✅ **NEW**: Implemented price trend visualization with Chart.js line plots
-- ✅ **NEW**: Calculate and display average prices for each product
 
 **Clarifications from User**:
 - This is a portal for "all things food" on localhost
@@ -203,31 +132,13 @@ The user now wants to add a new tab called "Vendor Cost Management" that:
 - **Critical Logic**: If "preloaded drinks" are mentioned, subtract that amount from food total and add to drinks total
 
 **Next Steps**: 
-- ✅ User created `.env` file with `OPENAI_API_KEY` (fixed variable name from OPEN_API_KEY to OPENAI_API_KEY)
-- ✅ Vendor Cost Management feature implemented (Phase 8)
+- User needs to create `.env` file with `OPENAI_API_KEY`
 - Test with actual party detail PDFs
-- Test Vendor Cost Management with actual Excel files from vendors
-- Verify Excel column identification works with various file formats
-- Verify product name matching accuracy
+- Verify cost breakdown calculations
 
 ## Executor's Feedback or Assistance Requests
 
-**Vendor Cost Management Implementation Complete**:
-- All Phase 8 tasks completed
-- Feature is ready for testing with actual Excel files
-- The system will:
-  1. Accept a reference Excel sheet with product names
-  2. Accept multiple vendor Excel files (different suppliers)
-  3. Use OpenAI to intelligently identify columns (product description, unit price, date)
-  4. Extract and match products using fuzzy matching
-  5. Display price trends over time with line charts
-  6. Show average prices for each product
-
-**Testing Recommendations**:
-- Test with various Excel file formats and column structures
-- Verify that OpenAI column identification works correctly
-- Test product name matching with slight variations in naming
-- Ensure date parsing handles different date formats
+*Starting implementation now - building the portal*
 
 ## Lessons
 
@@ -257,18 +168,4 @@ The user now wants to add a new tab called "Vendor Cost Management" that:
 - Food Items Table: Food Name, # Pans, Pan Size, Item #, Add-ons
 - Entertainment Section (separate)
 - Financial Summary: Food Total, Drinks Total, Entertainment Total
-
-### Vendor Cost Management Data Structure:
-- **Main Reference Sheet**: Array of product objects with standardized names
-- **Extracted Invoice Data**: 
-  - Array of invoice objects, each containing:
-    - sourceFile: filename
-    - date: Date object
-    - items: Array of { productName, unitPrice, ...other columns }
-- **Processed Data by Product**:
-  - For each reference product:
-    - productName: string
-    - priceHistory: Array of { date, price, sourceFile }
-    - averagePrice: number
-    - priceChart: Chart.js line plot data
 

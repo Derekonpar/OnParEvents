@@ -743,55 +743,43 @@ app.post('/api/vendor-costs', excelUpload.fields([
       console.log('Processing mapping sheet...');
       try {
         const mappingData = await readExcelFile(mappingFile.path);
-        const mappingColumnMapping = await identifyExcelColumns(mappingData.headers, mappingData.data);
         
-        // Expecting two columns: invoice product name and reference product name
-        // Try to identify which is which
-        let invoiceColumn = mappingColumnMapping.productDescriptionColumn;
-        let referenceColumn = null;
+        // New structure: First column is reference product name, remaining columns are invoice variations
+        // Look for a column that contains "reference" in the name, otherwise assume first column
+        let referenceColumnIndex = 0;
+        let referenceColumn = mappingData.headers[0];
         
-        // Look for a column that might be the reference product
         mappingData.headers.forEach((header, index) => {
           const lowerHeader = header.toLowerCase();
-          if (lowerHeader.includes('reference') || lowerHeader.includes('match') || 
-              lowerHeader.includes('reference') || lowerHeader.includes('target')) {
+          if (lowerHeader.includes('reference') || lowerHeader.includes('target') || 
+              lowerHeader.includes('match') || lowerHeader.includes('standard')) {
+            referenceColumnIndex = index;
             referenceColumn = header;
           }
         });
         
-        // If we have two product description columns, use the second one as reference
-        if (!referenceColumn && mappingData.headers.length >= 2) {
-          const productCols = mappingData.headers.filter((h, i) => {
-            const lower = h.toLowerCase();
-            return lower.includes('product') || lower.includes('item') || 
-                   lower.includes('description') || lower.includes('name');
-          });
-          if (productCols.length >= 2) {
-            invoiceColumn = productCols[0];
-            referenceColumn = productCols[1];
-          } else if (mappingData.headers.length === 2) {
-            // Just use the two columns
-            invoiceColumn = mappingData.headers[0];
-            referenceColumn = mappingData.headers[1];
-          }
-        }
+        console.log(`Using "${referenceColumn}" as reference product column`);
         
-        if (invoiceColumn && referenceColumn) {
-          mappingData.data.forEach(row => {
+        // All other columns are invoice product name variations
+        const invoiceColumns = mappingData.headers.filter((header, index) => index !== referenceColumnIndex);
+        console.log(`Found ${invoiceColumns.length} invoice description columns: ${invoiceColumns.join(', ')}`);
+        
+        mappingData.data.forEach((row, rowIndex) => {
+          const refName = row[referenceColumn]?.toString().trim();
+          if (!refName) return; // Skip rows without reference product name
+          
+          // Map all invoice variations in this row to the reference product
+          invoiceColumns.forEach(invoiceColumn => {
             const invoiceName = row[invoiceColumn]?.toString().trim();
-            const refName = row[referenceColumn]?.toString().trim();
-            if (invoiceName && refName) {
-              // Normalize both for consistent matching
+            if (invoiceName) {
               const normalizedInvoice = normalizeProductName(invoiceName);
-              const normalizedRef = normalizeProductName(refName);
               productMapping.set(normalizedInvoice, refName); // Store normalized invoice -> reference
               console.log(`  Mapping: "${invoiceName}" -> "${refName}"`);
             }
           });
-          console.log(`Created ${productMapping.size} product mappings from mapping sheet`);
-        } else {
-          console.log('⚠️  Could not identify mapping columns, will use fuzzy matching only');
-        }
+        });
+        
+        console.log(`Created ${productMapping.size} product mappings from mapping sheet`);
         
         await fs.unlink(mappingFile.path);
       } catch (error) {
@@ -890,11 +878,22 @@ app.post('/api/vendor-costs', excelUpload.fields([
       
       // Calculate average
       const averagePrice = priceHistory.reduce((sum, item) => sum + item.price, 0) / priceHistory.length;
+      
+      // Get most recent price (last item after sorting)
+      const mostRecentPrice = priceHistory.length > 0 ? priceHistory[priceHistory.length - 1].price : null;
+      
+      // Calculate percentage change from average to most recent
+      let percentChange = null;
+      if (mostRecentPrice && averagePrice > 0) {
+        percentChange = ((mostRecentPrice - averagePrice) / averagePrice) * 100;
+      }
 
       return {
         productName: productName,
         priceHistory: priceHistory,
-        averagePrice: parseFloat(averagePrice.toFixed(2))
+        averagePrice: parseFloat(averagePrice.toFixed(2)),
+        mostRecentPrice: mostRecentPrice ? parseFloat(mostRecentPrice.toFixed(2)) : null,
+        percentChange: percentChange !== null ? parseFloat(percentChange.toFixed(2)) : null
       };
     });
 

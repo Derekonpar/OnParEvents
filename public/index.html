@@ -390,7 +390,9 @@
             <div style="margin-bottom: 30px;">
                 <h3 style="margin-bottom: 15px;">Product Mapping Sheet (Optional)</h3>
                 <p style="color: #999; margin-bottom: 10px; font-size: 0.9em;">
-                    Upload an Excel file with two columns: <strong>Invoice Product Name</strong> and <strong>Reference Product Name</strong>.
+                    Upload an Excel file with <strong>Reference Product Name</strong> in the first column (or a column with "reference" in the name),
+                    and multiple columns with different invoice descriptions that all map to that reference product.
+                    <br><strong>Format:</strong> First column = Reference Product Name, Other columns = Invoice variations (one row per product)
                     <br>This ensures perfect matching for items that don't match automatically. Leave empty to use fuzzy matching only.
                 </p>
                 <div class="upload-area" id="mappingUploadArea" style="padding: 20px;">
@@ -435,6 +437,7 @@
         let selectedFiles = [];
         let referenceFile = null;
         let vendorFiles = [];
+        let mappingFile = null;
 
         function switchTab(tabName) {
             // Hide all tab contents
@@ -856,8 +859,6 @@
         const vendorProcessButton = document.getElementById('vendorProcessButton');
         const vendorLoading = document.getElementById('vendorLoading');
         const vendorResults = document.getElementById('vendorResults');
-        
-        let mappingFile = null;
 
         // Reference file handling
         referenceInput.addEventListener('change', (e) => {
@@ -1045,6 +1046,14 @@
                             </div>
                             <div style="text-align: center; margin-top: 15px;">
                                 <strong>Average Price: $${product.averagePrice.toFixed(2)}</strong>
+                                ${product.mostRecentPrice !== null && product.percentChange !== null ? `
+                                    <br><span style="color: #666; font-size: 0.9em;">
+                                        Most Recent: $${product.mostRecentPrice.toFixed(2)} 
+                                        <span style="color: ${product.percentChange >= 0 ? '#dc3545' : '#28a745'}; font-weight: bold;">
+                                            (${product.percentChange >= 0 ? '+' : ''}${product.percentChange.toFixed(2)}% ${product.percentChange >= 0 ? 'above' : 'below'} average)
+                                        </span>
+                                    </span>
+                                ` : ''}
                             </div>
                             <div style="margin-top: 15px; font-size: 0.9em; color: #666;">
                                 <strong>Price History:</strong>
