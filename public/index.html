@@ -339,6 +339,8 @@
         <div class="tabs">
             <button class="tab active" onclick="switchTab('party-sheets')">Party Sheet Analyzer</button>
             <button class="tab" onclick="switchTab('vendor-cost')">Vendor Cost Management</button>
+            <button class="tab" onclick="switchTab('biweekly-order')">Biweekly Order Providers</button>
+            <button class="tab" onclick="switchTab('biweekly-order-auto')">Biweekly Order Automation (No US Foods)</button>
         </div>
 
         <!-- Party Sheet Analyzer Tab -->
@@ -419,6 +421,44 @@
                 </div>
             </div>
 
+            <!-- Sysco Invoices with Manual Dates -->
+            <div style="margin-bottom: 30px;">
+                <h3 style="margin-bottom: 15px;">Sysco Invoices (Manual Dates)</h3>
+                <p style="color: #999; margin-bottom: 10px; font-size: 0.9em;">
+                    For Sysco Excel invoices where there is no date column, upload each invoice and type the order date manually.
+                    These data points will be included in the price history line plots alongside other vendor invoices.
+                    <br><strong>Sysco Format:</strong> Column H = Product description, Column K = Unit price.
+                </p>
+                <div class="upload-area" id="syscoUploadArea" style="padding: 20px; text-align: left;">
+                    <div id="syscoRows"></div>
+                    <button class="upload-button" type="button" onclick="addSyscoRow()">
+                        + Add Sysco Invoice
+                    </button>
+                    <p style="color: #999; margin-top: 10px; font-size: 0.85em;">
+                        Tip: Add one row per Sysco invoice. Each row needs a file and a date.
+                    </p>
+                </div>
+            </div>
+
+            <!-- US Foods Invoices with Manual Dates -->
+            <div style="margin-bottom: 30px;">
+                <h3 style="margin-bottom: 15px;">US Foods Invoices (Manual Dates)</h3>
+                <p style="color: #999; margin-bottom: 10px; font-size: 0.9em;">
+                    For US Foods Excel invoices where there is no date column, upload each invoice and type the order date manually.
+                    These data points will be included in the price history line plots alongside other vendor invoices.
+                    <br><strong>US Foods Format:</strong> Column B = Product description, Column G = Unit price.
+                </p>
+                <div class="upload-area" id="usFoodsUploadArea" style="padding: 20px; text-align: left;">
+                    <div id="usFoodsRows"></div>
+                    <button class="upload-button" type="button" onclick="addUsFoodsRow()">
+                        + Add US Foods Invoice
+                    </button>
+                    <p style="color: #999; margin-top: 10px; font-size: 0.85em;">
+                        Tip: Add one row per US Foods invoice. Each row needs a file and a date.
+                    </p>
+                </div>
+            </div>
+
             <button class="process-button" id="vendorProcessButton" onclick="processVendorFiles()" disabled>
                 Analyze Vendor Costs
             </button>
@@ -430,6 +470,198 @@
 
             <div class="results" id="vendorResults"></div>
         </div>
+
+        <!-- Biweekly Order Providers Tab -->
+        <div id="biweekly-order" class="tab-content">
+            <h2 style="margin-bottom: 20px;">Biweekly Order Providers</h2>
+            <p style="color: #666; margin-bottom: 30px;">
+                Upload your inventory + current prices from each provider, and this will recommend the cheapest vendor per item.
+            </p>
+
+            <!-- Inventory CSV Upload -->
+            <div style="margin-bottom: 30px;">
+                <h3 style="margin-bottom: 15px;">Inventory / Order Sheet (CSV)</h3>
+                <p style="color: #999; margin-bottom: 10px; font-size: 0.9em;">
+                    Product name in column <strong>B</strong>, quantity to order in column <strong>K</strong> (data starts on row 2).
+                </p>
+                <div class="upload-area" id="biweeklyInventoryUploadArea" style="padding: 20px; text-align: left;">
+                    <p style="color: #666; margin-bottom: 15px;">📋 Upload Inventory CSV</p>
+                    <button class="upload-button" onclick="document.getElementById('biweeklyInventoryInput').click()">
+                        Choose Inventory File
+                    </button>
+                    <input type="file" id="biweeklyInventoryInput" accept=".csv" />
+                    <div class="file-list" id="biweeklyInventoryFileList"></div>
+                </div>
+            </div>
+
+            <!-- Provider Prices CSV Upload -->
+            <div style="margin-bottom: 30px;">
+                <h3 style="margin-bottom: 15px;">Provider Prices (CSV) - Upload Each Vendor</h3>
+                <p style="color: #999; margin-bottom: 10px; font-size: 0.9em;">
+                    Upload one CSV per provider. Columns/row starts are fixed for parsing, and the mapping sheet aligns product names.
+                </p>
+
+                <div class="upload-area" id="biweeklyUsFoodsUploadArea" style="padding: 20px; text-align: left; margin-bottom: 20px;">
+                    <p style="color: #666; margin-bottom: 15px;">📋 US Foods CSV</p>
+                    <button class="upload-button" onclick="document.getElementById('biweeklyUsFoodsInput').click()">
+                        Choose US Foods Prices File
+                    </button>
+                    <input type="file" id="biweeklyUsFoodsInput" accept=".csv" />
+                    <div class="file-list" id="biweeklyUsFoodsFileList"></div>
+                </div>
+
+                <div class="upload-area" id="biweeklyPfgUploadArea" style="padding: 20px; text-align: left; margin-bottom: 20px;">
+                    <p style="color: #666; margin-bottom: 15px;">📋 PFG CSV</p>
+                    <button class="upload-button" onclick="document.getElementById('biweeklyPfgInput').click()">
+                        Choose PFG Prices File
+                    </button>
+                    <input type="file" id="biweeklyPfgInput" accept=".csv" />
+                    <div class="file-list" id="biweeklyPfgFileList"></div>
+                </div>
+
+                <div class="upload-area" id="biweeklySyscoUploadArea" style="padding: 20px; text-align: left; margin-bottom: 20px;">
+                    <p style="color: #666; margin-bottom: 15px;">📋 Sysco CSV</p>
+                    <button class="upload-button" onclick="document.getElementById('biweeklySyscoInput').click()">
+                        Choose Sysco Prices File
+                    </button>
+                    <input type="file" id="biweeklySyscoInput" accept=".csv" />
+                    <div class="file-list" id="biweeklySyscoFileList"></div>
+                </div>
+
+                <div class="upload-area" id="biweeklyGfsUploadArea" style="padding: 20px; text-align: left;">
+                    <p style="color: #666; margin-bottom: 15px;">📋 GFS CSV</p>
+                    <button class="upload-button" onclick="document.getElementById('biweeklyGfsInput').click()">
+                        Choose GFS Prices File
+                    </button>
+                    <input type="file" id="biweeklyGfsInput" accept=".csv" />
+                    <div class="file-list" id="biweeklyGfsFileList"></div>
+                </div>
+            </div>
+
+            <!-- Mapping Sheet Upload -->
+            <div style="margin-bottom: 30px;">
+                <h3 style="margin-bottom: 15px;">Product Mapping Sheet (Excel)</h3>
+                <p style="color: #999; margin-bottom: 10px; font-size: 0.9em;">
+                    Same mapping logic as Vendor Cost Management. Reference product name in the first column; provider product variations in the other columns.
+                </p>
+                <div class="upload-area" id="biweeklyMappingUploadArea" style="padding: 20px; text-align: left;">
+                    <p style="color: #666; margin-bottom: 15px;">🔗 Upload Mapping Sheet</p>
+                    <button class="upload-button" onclick="document.getElementById('biweeklyMappingInput').click()">
+                        Choose Mapping File
+                    </button>
+                    <input type="file" id="biweeklyMappingInput" accept=".xlsx,.xls" />
+                    <div class="file-list" id="biweeklyMappingFileList"></div>
+                </div>
+            </div>
+
+            <button class="process-button" id="biweeklyProcessButton" onclick="processBiweeklyOrder()" disabled>
+                Generate Order Plan
+            </button>
+
+            <div class="loading" id="biweeklyLoading">
+                <div class="spinner"></div>
+                <p>Calculating cheapest providers...</p>
+            </div>
+
+            <div class="results" id="biweeklyResults"></div>
+        </div>
+
+        <!-- Biweekly Order Automation (No US Foods) Tab -->
+        <div id="biweekly-order-auto" class="tab-content">
+            <h2 style="margin-bottom: 20px;">Biweekly Order Automation (No US Foods)</h2>
+            <p style="color: #666; margin-bottom: 30px;">
+                Same workflow as Biweekly Order Providers, but without US Foods. Upload inventory + provider prices, then generate the order plan.
+            </p>
+
+            <!-- Inventory CSV Upload -->
+            <div style="margin-bottom: 30px;">
+                <h3 style="margin-bottom: 15px;">Inventory / Order Sheet (CSV)</h3>
+                <p style="color: #999; margin-bottom: 10px; font-size: 0.9em;">
+                    Product name in column <strong>B</strong>, quantity to order in column <strong>K</strong> (data starts on row 2).
+                </p>
+                <div class="upload-area" id="biweeklyAutoInventoryUploadArea" style="padding: 20px; text-align: left;">
+                    <p style="color: #666; margin-bottom: 15px;">📋 Upload Inventory CSV</p>
+                    <button class="upload-button" onclick="document.getElementById('biweeklyAutoInventoryInput').click()">
+                        Choose Inventory File
+                    </button>
+                    <input type="file" id="biweeklyAutoInventoryInput" accept=".csv" />
+                    <div class="file-list" id="biweeklyAutoInventoryFileList"></div>
+                </div>
+            </div>
+
+            <!-- Provider Prices CSV Upload -->
+            <div style="margin-bottom: 30px;">
+                <h3 style="margin-bottom: 15px;">Provider Prices (CSV) - Upload Each Vendor</h3>
+                <p style="color: #999; margin-bottom: 10px; font-size: 0.9em;">
+                    Upload one CSV per provider. Columns/row starts are fixed for parsing, and the mapping sheet aligns product names.
+                </p>
+
+                <div class="upload-area" id="biweeklyAutoPfgUploadArea" style="padding: 20px; text-align: left; margin-bottom: 20px;">
+                    <p style="color: #666; margin-bottom: 15px;">📋 PFG CSV</p>
+                    <button class="upload-button" onclick="document.getElementById('biweeklyAutoPfgInput').click()">
+                        Choose PFG Prices File
+                    </button>
+                    <input type="file" id="biweeklyAutoPfgInput" accept=".csv" />
+                    <div class="file-list" id="biweeklyAutoPfgFileList"></div>
+                </div>
+
+                <div class="upload-area" id="biweeklyAutoSyscoUploadArea" style="padding: 20px; text-align: left; margin-bottom: 20px;">
+                    <p style="color: #666; margin-bottom: 15px;">📋 Sysco CSV</p>
+                    <button class="upload-button" onclick="document.getElementById('biweeklyAutoSyscoInput').click()">
+                        Choose Sysco Prices File
+                    </button>
+                    <input type="file" id="biweeklyAutoSyscoInput" accept=".csv" />
+                    <div class="file-list" id="biweeklyAutoSyscoFileList"></div>
+                </div>
+
+                <div class="upload-area" id="biweeklyAutoGfsUploadArea" style="padding: 20px; text-align: left;">
+                    <p style="color: #666; margin-bottom: 15px;">📋 GFS CSV</p>
+                    <button class="upload-button" onclick="document.getElementById('biweeklyAutoGfsInput').click()">
+                        Choose GFS Prices File
+                    </button>
+                    <input type="file" id="biweeklyAutoGfsInput" accept=".csv" />
+                    <div class="file-list" id="biweeklyAutoGfsFileList"></div>
+                </div>
+            </div>
+
+            <!-- Mapping Sheet Upload -->
+            <div style="margin-bottom: 30px;">
+                <h3 style="margin-bottom: 15px;">Product Mapping Sheet (Excel)</h3>
+                <p style="color: #999; margin-bottom: 10px; font-size: 0.9em;">
+                    Same mapping logic as Vendor Cost Management. Reference product name in the first column; provider product variations in the other columns.
+                </p>
+                <div class="upload-area" id="biweeklyAutoMappingUploadArea" style="padding: 20px; text-align: left;">
+                    <p style="color: #666; margin-bottom: 15px;">🔗 Upload Mapping Sheet</p>
+                    <button class="upload-button" onclick="document.getElementById('biweeklyAutoMappingInput').click()">
+                        Choose Mapping File
+                    </button>
+                    <input type="file" id="biweeklyAutoMappingInput" accept=".xlsx,.xls" />
+                    <div class="file-list" id="biweeklyAutoMappingFileList"></div>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 20px; background: #f8f9fa; padding: 12px 14px; border-radius: 10px;">
+                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; color: #333;">
+                    <input type="checkbox" id="biweeklyAutoUseSheets" />
+                    <span><strong>Use Google Sheets</strong> for Inventory + Mapping (no uploads needed)</span>
+                </label>
+                <p style="color:#666; margin-top: 8px; font-size: 0.9em;">
+                    This pulls your latest inventory (CSV) + mapping (XLSX) using the export URLs in your <code>.env</code>.
+                </p>
+            </div>
+
+            <!-- NOTE: Logic wiring comes in Step 2 -->
+            <button class="process-button" id="biweeklyAutoProcessButton" onclick="processBiweeklyOrderAuto()" disabled>
+                Generate Order Plan
+            </button>
+
+            <div class="loading" id="biweeklyAutoLoading">
+                <div class="spinner"></div>
+                <p>Calculating cheapest providers...</p>
+            </div>
+
+            <div class="results" id="biweeklyAutoResults"></div>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -438,6 +670,23 @@
         let referenceFile = null;
         let vendorFiles = [];
         let mappingFile = null;
+        // Sysco rows are represented in the DOM; we just manage IDs
+        let syscoRowCounter = 0;
+        let usFoodsRowCounter = 0;
+        // Biweekly ordering inputs (provider price CSV + inventory CSV + mapping)
+        let biweeklyInventoryFile = null;
+        let biweeklyUsFoodsFile = null;
+        let biweeklyPfgFile = null;
+        let biweeklySyscoFile = null;
+        let biweeklyGfsFile = null;
+        let biweeklyMappingFile = null;
+
+        // Biweekly automation (no US Foods) inputs
+        let biweeklyAutoInventoryFile = null;
+        let biweeklyAutoPfgFile = null;
+        let biweeklyAutoSyscoFile = null;
+        let biweeklyAutoGfsFile = null;
+        let biweeklyAutoMappingFile = null;
 
         function switchTab(tabName) {
             // Hide all tab contents
@@ -455,6 +704,555 @@
             
             // Add active class to clicked tab
             event.target.classList.add('active');
+        }
+
+        // Biweekly: file upload handling
+        const biweeklyInventoryInput = document.getElementById('biweeklyInventoryInput');
+        const biweeklyUsFoodsInput = document.getElementById('biweeklyUsFoodsInput');
+        const biweeklyPfgInput = document.getElementById('biweeklyPfgInput');
+        const biweeklySyscoInput = document.getElementById('biweeklySyscoInput');
+        const biweeklyGfsInput = document.getElementById('biweeklyGfsInput');
+        const biweeklyMappingInput = document.getElementById('biweeklyMappingInput');
+        const biweeklyInventoryFileList = document.getElementById('biweeklyInventoryFileList');
+        const biweeklyUsFoodsFileList = document.getElementById('biweeklyUsFoodsFileList');
+        const biweeklyPfgFileList = document.getElementById('biweeklyPfgFileList');
+        const biweeklySyscoFileList = document.getElementById('biweeklySyscoFileList');
+        const biweeklyGfsFileList = document.getElementById('biweeklyGfsFileList');
+        const biweeklyMappingFileList = document.getElementById('biweeklyMappingFileList');
+        const biweeklyProcessButton = document.getElementById('biweeklyProcessButton');
+        const biweeklyLoading = document.getElementById('biweeklyLoading');
+        const biweeklyResults = document.getElementById('biweeklyResults');
+
+        // Biweekly automation (no US Foods): inputs + UI refs
+        const biweeklyAutoInventoryInput = document.getElementById('biweeklyAutoInventoryInput');
+        const biweeklyAutoPfgInput = document.getElementById('biweeklyAutoPfgInput');
+        const biweeklyAutoSyscoInput = document.getElementById('biweeklyAutoSyscoInput');
+        const biweeklyAutoGfsInput = document.getElementById('biweeklyAutoGfsInput');
+        const biweeklyAutoMappingInput = document.getElementById('biweeklyAutoMappingInput');
+        const biweeklyAutoInventoryFileList = document.getElementById('biweeklyAutoInventoryFileList');
+        const biweeklyAutoPfgFileList = document.getElementById('biweeklyAutoPfgFileList');
+        const biweeklyAutoSyscoFileList = document.getElementById('biweeklyAutoSyscoFileList');
+        const biweeklyAutoGfsFileList = document.getElementById('biweeklyAutoGfsFileList');
+        const biweeklyAutoMappingFileList = document.getElementById('biweeklyAutoMappingFileList');
+        const biweeklyAutoProcessButton = document.getElementById('biweeklyAutoProcessButton');
+        const biweeklyAutoLoading = document.getElementById('biweeklyAutoLoading');
+        const biweeklyAutoResults = document.getElementById('biweeklyAutoResults');
+        const biweeklyAutoUseSheets = document.getElementById('biweeklyAutoUseSheets');
+
+        function updateBiweeklyAutoProcessButton() {
+            if (!biweeklyAutoProcessButton) return;
+            const useSheets = !!(biweeklyAutoUseSheets && biweeklyAutoUseSheets.checked);
+            biweeklyAutoProcessButton.disabled =
+                (!useSheets && !biweeklyAutoInventoryFile) ||
+                !biweeklyAutoPfgFile ||
+                !biweeklyAutoSyscoFile ||
+                !biweeklyAutoGfsFile ||
+                (!useSheets && !biweeklyAutoMappingFile);
+        }
+
+        function renderSingleFileItem(file, onRemoveName) {
+            if (!file) return '';
+            return `
+                <div class="file-item">
+                    <span>${file.name}</span>
+                    <button onclick="${onRemoveName}()" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">Remove</button>
+                </div>
+            `;
+        }
+
+        function removeBiweeklyAutoInventoryFile() {
+            biweeklyAutoInventoryFile = null;
+            if (biweeklyAutoInventoryFileList) biweeklyAutoInventoryFileList.innerHTML = '';
+            if (biweeklyAutoInventoryInput) biweeklyAutoInventoryInput.value = '';
+            updateBiweeklyAutoProcessButton();
+        }
+        function removeBiweeklyAutoPfgFile() {
+            biweeklyAutoPfgFile = null;
+            if (biweeklyAutoPfgFileList) biweeklyAutoPfgFileList.innerHTML = '';
+            if (biweeklyAutoPfgInput) biweeklyAutoPfgInput.value = '';
+            updateBiweeklyAutoProcessButton();
+        }
+        function removeBiweeklyAutoSyscoFile() {
+            biweeklyAutoSyscoFile = null;
+            if (biweeklyAutoSyscoFileList) biweeklyAutoSyscoFileList.innerHTML = '';
+            if (biweeklyAutoSyscoInput) biweeklyAutoSyscoInput.value = '';
+            updateBiweeklyAutoProcessButton();
+        }
+        function removeBiweeklyAutoGfsFile() {
+            biweeklyAutoGfsFile = null;
+            if (biweeklyAutoGfsFileList) biweeklyAutoGfsFileList.innerHTML = '';
+            if (biweeklyAutoGfsInput) biweeklyAutoGfsInput.value = '';
+            updateBiweeklyAutoProcessButton();
+        }
+        function removeBiweeklyAutoMappingFile() {
+            biweeklyAutoMappingFile = null;
+            if (biweeklyAutoMappingFileList) biweeklyAutoMappingFileList.innerHTML = '';
+            if (biweeklyAutoMappingInput) biweeklyAutoMappingInput.value = '';
+            updateBiweeklyAutoProcessButton();
+        }
+
+        if (biweeklyAutoUseSheets) {
+            biweeklyAutoUseSheets.addEventListener('change', () => {
+                // When using sheets, clear local inventory/mapping selections (optional, avoids confusion).
+                if (biweeklyAutoUseSheets.checked) {
+                    removeBiweeklyAutoInventoryFile();
+                    removeBiweeklyAutoMappingFile();
+                }
+                updateBiweeklyAutoProcessButton();
+            });
+        }
+
+        if (biweeklyAutoInventoryInput) {
+            biweeklyAutoInventoryInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    biweeklyAutoInventoryFile = e.target.files[0];
+                    if (biweeklyAutoInventoryFileList) biweeklyAutoInventoryFileList.innerHTML = renderSingleFileItem(biweeklyAutoInventoryFile, 'removeBiweeklyAutoInventoryFile');
+                    updateBiweeklyAutoProcessButton();
+                }
+            });
+        }
+        if (biweeklyAutoPfgInput) {
+            biweeklyAutoPfgInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    biweeklyAutoPfgFile = e.target.files[0];
+                    if (biweeklyAutoPfgFileList) biweeklyAutoPfgFileList.innerHTML = renderSingleFileItem(biweeklyAutoPfgFile, 'removeBiweeklyAutoPfgFile');
+                    updateBiweeklyAutoProcessButton();
+                }
+            });
+        }
+        if (biweeklyAutoSyscoInput) {
+            biweeklyAutoSyscoInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    biweeklyAutoSyscoFile = e.target.files[0];
+                    if (biweeklyAutoSyscoFileList) biweeklyAutoSyscoFileList.innerHTML = renderSingleFileItem(biweeklyAutoSyscoFile, 'removeBiweeklyAutoSyscoFile');
+                    updateBiweeklyAutoProcessButton();
+                }
+            });
+        }
+        if (biweeklyAutoGfsInput) {
+            biweeklyAutoGfsInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    biweeklyAutoGfsFile = e.target.files[0];
+                    if (biweeklyAutoGfsFileList) biweeklyAutoGfsFileList.innerHTML = renderSingleFileItem(biweeklyAutoGfsFile, 'removeBiweeklyAutoGfsFile');
+                    updateBiweeklyAutoProcessButton();
+                }
+            });
+        }
+        if (biweeklyAutoMappingInput) {
+            biweeklyAutoMappingInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    biweeklyAutoMappingFile = e.target.files[0];
+                    if (biweeklyAutoMappingFileList) biweeklyAutoMappingFileList.innerHTML = renderSingleFileItem(biweeklyAutoMappingFile, 'removeBiweeklyAutoMappingFile');
+                    updateBiweeklyAutoProcessButton();
+                }
+            });
+        }
+
+        function displayBiweeklyResultsInto(data, resultsEl) {
+            let html = '<h2 style="margin-bottom: 20px;">Cheapest Provider Recommendations</h2>';
+
+            if (data.summary) {
+                const vendorTotals = data.summary.vendorTotals || {};
+                const vendorLines = Object.keys(vendorTotals).length
+                    ? Object.keys(vendorTotals).map(v => `<li style="padding: 4px 0;">${v}: $${vendorTotals[v].toFixed(2)}</li>`).join('')
+                    : '<li style="padding: 4px 0;">No vendor totals</li>';
+
+                html += `
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
+                        <h3 style="margin-bottom: 10px;">Summary</h3>
+                        <p><strong>Items Recommended:</strong> ${data.summary.recommendationsCount || 0}</p>
+                        <p><strong>Unmatched Items:</strong> ${data.summary.unmatchedCount || 0}</p>
+                        <p><strong>Grand Total:</strong> $${(data.summary.grandTotal || 0).toFixed(2)}</p>
+                        <p style="color:#666; margin-top: 10px;"><strong>Totals By Vendor</strong></p>
+                        <ul style="margin-top: 8px; list-style: none; padding: 0;">
+                            ${vendorLines}
+                        </ul>
+                    </div>
+                `;
+            }
+
+            if (data.matchedRecords && (data.matchedRecords.mapped != null || data.matchedRecords.fuzzyMatched != null)) {
+                const m = data.matchedRecords.mapped || 0;
+                const f = data.matchedRecords.fuzzyMatched || 0;
+                const u = data.matchedRecords.unmatched != null ? data.matchedRecords.unmatched : '';
+                const tail = u !== '' ? `, provider rows with no link: <strong>${u}</strong>` : '';
+                html += `<p style="color:#666; font-size:0.95em; margin: -6px 0 14px;">Provider CSV rows: exact map <strong>${m}</strong>, fuzzy <strong>${f}</strong>${tail}.</p>`;
+            }
+
+            if (data.unmatchedItems && data.unmatchedItems.length > 0) {
+                html += `
+                    <div class="result-card" style="background: #fff3cd; border-left-color: #ffc107; margin-bottom: 20px;">
+                        <h3>⚠️ Unmatched Items (${data.unmatchedItems.length})</h3>
+                        <p style="color: #666; margin-bottom: 10px;">No recommendation line could be built (inventory not on the mapping sheet, or no provider price for the mapped product).</p>
+                        <ul style="margin: 0; padding-left: 18px;">
+                            ${data.unmatchedItems.map((it) => {
+                                const ref = it.referenceProduct ? ` — map: <em>${it.referenceProduct}</em>` : '';
+                                const code = it.reason ? ` <span style="color:#999;font-size:0.9em">(${it.reason})</span>` : '';
+                                return `<li>${it.productName} (Qty: ${it.quantity})${ref}${code}</li>`;
+                            }).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+
+            if (data.recommendations && data.recommendations.length > 0) {
+                html += `
+                    <div class="result-card" style="margin-bottom: 20px;">
+                        <h3>Recommendations</h3>
+                        <div class="line-items" style="margin-top: 10px;">
+                            ${data.recommendations.map(rec => `
+                                <div class="line-item">
+                                    <span>
+                                        <strong>${rec.productName}</strong>
+                                        ${rec.referenceProduct && rec.referenceProduct !== rec.productName
+                                            ? ` <span style="color:#666;font-size:0.92em">→ ${rec.referenceProduct}</span>`
+                                            : ''}
+                                        - Qty: ${rec.quantity}
+                                        - ${rec.vendor} @ $${rec.unitPrice.toFixed(4)}
+                                        ${rec.packNote ? ` <em>(${rec.packNote})</em>` : ''}
+                                    </span>
+                                    <span><strong>$${rec.lineTotal.toFixed(2)}</strong></span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            } else {
+                html += '<p style="color:#999;">No recommendations found. Check that your mapping sheet matches provider product names and inventory quantities.</p>';
+            }
+
+            resultsEl.innerHTML = html;
+            resultsEl.classList.add('active');
+        }
+
+        // Keep existing function name but render through shared helper
+        function displayBiweeklyResults(data) {
+            displayBiweeklyResultsInto(data, biweeklyResults);
+        }
+
+        async function processBiweeklyOrderAuto() {
+            if (!biweeklyAutoPfgFile || !biweeklyAutoSyscoFile || !biweeklyAutoGfsFile) return;
+            const useSheets = !!(biweeklyAutoUseSheets && biweeklyAutoUseSheets.checked);
+            if (!useSheets && (!biweeklyAutoInventoryFile || !biweeklyAutoMappingFile)) return;
+
+            const formData = new FormData();
+            if (!useSheets) {
+                formData.append('inventoryCsv', biweeklyAutoInventoryFile);
+                formData.append('mappingSheet', biweeklyAutoMappingFile);
+            }
+            formData.append('pfgCsv', biweeklyAutoPfgFile);
+            formData.append('syscoCsv', biweeklyAutoSyscoFile);
+            formData.append('gfsCsv', biweeklyAutoGfsFile);
+
+            biweeklyAutoProcessButton.disabled = true;
+            biweeklyAutoLoading.classList.add('active');
+            biweeklyAutoResults.classList.remove('active');
+            biweeklyAutoResults.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/biweekly-order-no-usfoods', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Server error');
+                displayBiweeklyResultsInto(data, biweeklyAutoResults);
+            } catch (error) {
+                biweeklyAutoResults.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+                biweeklyAutoResults.classList.add('active');
+            } finally {
+                biweeklyAutoProcessButton.disabled = false;
+                biweeklyAutoLoading.classList.remove('active');
+            }
+        }
+
+        function updateBiweeklyProcessButton() {
+            if (!biweeklyProcessButton) return;
+            biweeklyProcessButton.disabled =
+                !biweeklyInventoryFile ||
+                !biweeklyUsFoodsFile ||
+                !biweeklyPfgFile ||
+                !biweeklySyscoFile ||
+                !biweeklyGfsFile ||
+                !biweeklyMappingFile;
+        }
+
+        function removeBiweeklyInventoryFile() {
+            biweeklyInventoryFile = null;
+            biweeklyInventoryFileList.innerHTML = '';
+            biweeklyInventoryInput.value = '';
+            updateBiweeklyProcessButton();
+        }
+
+        function removeBiweeklyUsFoodsFile() {
+            biweeklyUsFoodsFile = null;
+            biweeklyUsFoodsFileList.innerHTML = '';
+            biweeklyUsFoodsInput.value = '';
+            updateBiweeklyProcessButton();
+        }
+
+        function removeBiweeklyPfgFile() {
+            biweeklyPfgFile = null;
+            biweeklyPfgFileList.innerHTML = '';
+            biweeklyPfgInput.value = '';
+            updateBiweeklyProcessButton();
+        }
+
+        function removeBiweeklySyscoFile() {
+            biweeklySyscoFile = null;
+            biweeklySyscoFileList.innerHTML = '';
+            biweeklySyscoInput.value = '';
+            updateBiweeklyProcessButton();
+        }
+
+        function removeBiweeklyGfsFile() {
+            biweeklyGfsFile = null;
+            biweeklyGfsFileList.innerHTML = '';
+            biweeklyGfsInput.value = '';
+            updateBiweeklyProcessButton();
+        }
+
+        function removeBiweeklyMappingFile() {
+            biweeklyMappingFile = null;
+            biweeklyMappingFileList.innerHTML = '';
+            biweeklyMappingInput.value = '';
+            updateBiweeklyProcessButton();
+        }
+
+        if (biweeklyInventoryInput) {
+            biweeklyInventoryInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    biweeklyInventoryFile = e.target.files[0];
+                    biweeklyInventoryFileList.innerHTML = `
+                        <div class="file-item">
+                            <span>${biweeklyInventoryFile.name}</span>
+                            <button onclick="removeBiweeklyInventoryFile()" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">Remove</button>
+                        </div>
+                    `;
+                    updateBiweeklyProcessButton();
+                }
+            });
+        }
+
+        if (biweeklyUsFoodsInput) {
+            biweeklyUsFoodsInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    biweeklyUsFoodsFile = e.target.files[0];
+                    biweeklyUsFoodsFileList.innerHTML = `
+                        <div class="file-item">
+                            <span>${biweeklyUsFoodsFile.name}</span>
+                            <button onclick="removeBiweeklyUsFoodsFile()" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">Remove</button>
+                        </div>
+                    `;
+                    updateBiweeklyProcessButton();
+                }
+            });
+        }
+
+        if (biweeklyPfgInput) {
+            biweeklyPfgInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    biweeklyPfgFile = e.target.files[0];
+                    biweeklyPfgFileList.innerHTML = `
+                        <div class="file-item">
+                            <span>${biweeklyPfgFile.name}</span>
+                            <button onclick="removeBiweeklyPfgFile()" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">Remove</button>
+                        </div>
+                    `;
+                    updateBiweeklyProcessButton();
+                }
+            });
+        }
+
+        if (biweeklySyscoInput) {
+            biweeklySyscoInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    biweeklySyscoFile = e.target.files[0];
+                    biweeklySyscoFileList.innerHTML = `
+                        <div class="file-item">
+                            <span>${biweeklySyscoFile.name}</span>
+                            <button onclick="removeBiweeklySyscoFile()" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">Remove</button>
+                        </div>
+                    `;
+                    updateBiweeklyProcessButton();
+                }
+            });
+        }
+
+        if (biweeklyGfsInput) {
+            biweeklyGfsInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    biweeklyGfsFile = e.target.files[0];
+                    biweeklyGfsFileList.innerHTML = `
+                        <div class="file-item">
+                            <span>${biweeklyGfsFile.name}</span>
+                            <button onclick="removeBiweeklyGfsFile()" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">Remove</button>
+                        </div>
+                    `;
+                    updateBiweeklyProcessButton();
+                }
+            });
+        }
+
+        if (biweeklyMappingInput) {
+            biweeklyMappingInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    biweeklyMappingFile = e.target.files[0];
+                    biweeklyMappingFileList.innerHTML = `
+                        <div class="file-item">
+                            <span>${biweeklyMappingFile.name}</span>
+                            <button onclick="removeBiweeklyMappingFile()" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">Remove</button>
+                        </div>
+                    `;
+                    updateBiweeklyProcessButton();
+                }
+            });
+        }
+
+        // Biweekly: main processing call
+        async function processBiweeklyOrder() {
+            if (!biweeklyInventoryFile || !biweeklyUsFoodsFile || !biweeklyPfgFile || !biweeklySyscoFile || !biweeklyGfsFile || !biweeklyMappingFile) return;
+
+            const formData = new FormData();
+            formData.append('inventoryCsv', biweeklyInventoryFile);
+            formData.append('usFoodsCsv', biweeklyUsFoodsFile);
+            formData.append('pfgCsv', biweeklyPfgFile);
+            formData.append('syscoCsv', biweeklySyscoFile);
+            formData.append('gfsCsv', biweeklyGfsFile);
+            formData.append('mappingSheet', biweeklyMappingFile);
+
+            biweeklyProcessButton.disabled = true;
+            biweeklyLoading.classList.add('active');
+            biweeklyResults.classList.remove('active');
+            biweeklyResults.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/biweekly-order', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Server error');
+                }
+
+                displayBiweeklyResults(data);
+            } catch (error) {
+                biweeklyResults.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+                biweeklyResults.classList.add('active');
+            } finally {
+                biweeklyProcessButton.disabled = false;
+                biweeklyLoading.classList.remove('active');
+            }
+        }
+
+        // Sysco rows: each row has a file input and a date input
+        function addSyscoRow() {
+            const container = document.getElementById('syscoRows');
+            if (!container) return;
+
+            const rowId = `sysco-row-${syscoRowCounter++}`;
+            const row = document.createElement('div');
+            row.className = 'file-item';
+            row.id = rowId;
+            row.style.marginBottom = '10px';
+
+            row.innerHTML = `
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; width: 100%;">
+                    <div style="flex: 1 1 260px;">
+                        <strong>Sysco Invoice File:</strong><br>
+                        <button class="upload-button" type="button" onclick="document.querySelector('#${rowId} input[type=file]').click()" style="padding: 8px 16px; font-size: 0.9em;">
+                            Choose File
+                        </button>
+                        <input type="file" accept=".xlsx,.xls" onchange="onSyscoFileChange('${rowId}', this)" />
+                        <span class="sysco-file-name" style="margin-left: 8px; color: #555; font-size: 0.9em;"></span>
+                    </div>
+                    <div style="flex: 0 0 200px;">
+                        <strong>Order Date:</strong><br>
+                        <input type="date" class="sysco-date-input" style="padding: 6px 8px; border-radius: 6px; border: 1px solid #ccc; width: 100%;" />
+                    </div>
+                    <div style="flex: 0 0 auto;">
+                        <button type="button" onclick="removeSyscoRow('${rowId}')" style="background: #dc3545; color: white; border: none; padding: 6px 10px; border-radius: 5px; cursor: pointer; font-size: 0.9em;">
+                            Remove
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            container.appendChild(row);
+        }
+
+        function onSyscoFileChange(rowId, input) {
+            const row = document.getElementById(rowId);
+            if (!row) return;
+            const label = row.querySelector('.sysco-file-name');
+            if (input.files && input.files.length > 0) {
+                label.textContent = input.files[0].name;
+            } else {
+                label.textContent = '';
+            }
+        }
+
+        function removeSyscoRow(rowId) {
+            const row = document.getElementById(rowId);
+            if (row && row.parentNode) {
+                row.parentNode.removeChild(row);
+            }
+        }
+
+        // US Foods rows: each row has a file input and a date input
+        function addUsFoodsRow() {
+            const container = document.getElementById('usFoodsRows');
+            if (!container) return;
+
+            const rowId = `usfoods-row-${usFoodsRowCounter++}`;
+            const row = document.createElement('div');
+            row.className = 'file-item';
+            row.id = rowId;
+            row.style.marginBottom = '10px';
+
+            row.innerHTML = `
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; width: 100%;">
+                    <div style="flex: 1 1 260px;">
+                        <strong>US Foods Invoice File:</strong><br>
+                        <button class="upload-button" type="button" onclick="document.querySelector('#${rowId} input[type=file]').click()" style="padding: 8px 16px; font-size: 0.9em;">
+                            Choose File
+                        </button>
+                        <input type="file" accept=".xlsx,.xls" onchange="onUsFoodsFileChange('${rowId}', this)" />
+                        <span class="usfoods-file-name" style="margin-left: 8px; color: #555; font-size: 0.9em;"></span>
+                    </div>
+                    <div style="flex: 0 0 200px;">
+                        <strong>Order Date:</strong><br>
+                        <input type="date" class="usfoods-date-input" style="padding: 6px 8px; border-radius: 6px; border: 1px solid #ccc; width: 100%;" />
+                    </div>
+                    <div style="flex: 0 0 auto;">
+                        <button type="button" onclick="removeUsFoodsRow('${rowId}')" style="background: #dc3545; color: white; border: none; padding: 6px 10px; border-radius: 5px; cursor: pointer; font-size: 0.9em;">
+                            Remove
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            container.appendChild(row);
+        }
+
+        function onUsFoodsFileChange(rowId, input) {
+            const row = document.getElementById(rowId);
+            if (!row) return;
+            const label = row.querySelector('.usfoods-file-name');
+            if (input.files && input.files.length > 0) {
+                label.textContent = input.files[0].name;
+            } else {
+                label.textContent = '';
+            }
+        }
+
+        function removeUsFoodsRow(rowId) {
+            const row = document.getElementById(rowId);
+            if (row && row.parentNode) {
+                row.parentNode.removeChild(row);
+            }
         }
 
         const uploadArea = document.getElementById('uploadArea');
@@ -969,6 +1767,28 @@
             }
             vendorFiles.forEach(file => {
                 formData.append('vendorFiles', file);
+            });
+
+            // Collect Sysco files and manual dates from Sysco rows
+            const syscoRows = document.querySelectorAll('#syscoRows .file-item');
+            syscoRows.forEach(row => {
+                const fileInput = row.querySelector('input[type=file]');
+                const dateInput = row.querySelector('.sysco-date-input');
+                if (fileInput && fileInput.files && fileInput.files.length > 0 && dateInput && dateInput.value) {
+                    formData.append('syscoFiles', fileInput.files[0]);
+                    formData.append('syscoDates', dateInput.value);
+                }
+            });
+
+            // Collect US Foods files and manual dates from US Foods rows
+            const usFoodsRows = document.querySelectorAll('#usFoodsRows .file-item');
+            usFoodsRows.forEach(row => {
+                const fileInput = row.querySelector('input[type=file]');
+                const dateInput = row.querySelector('.usfoods-date-input');
+                if (fileInput && fileInput.files && fileInput.files.length > 0 && dateInput && dateInput.value) {
+                    formData.append('usFoodsFiles', fileInput.files[0]);
+                    formData.append('usFoodsDates', dateInput.value);
+                }
             });
 
             vendorProcessButton.disabled = true;

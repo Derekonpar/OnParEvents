@@ -40,6 +40,37 @@ A localhost npm portal for analyzing party detail sheets and breaking down costs
 5. **Open in browser:**
    Navigate to `http://localhost:3000`
 
+## Playwright (PFG order guide download + auto-upload)
+
+Optional automation that:
+- Logs into the PFG website
+- Downloads the Order Guide CSV
+- Opens `http://localhost:3000` and uploads the CSV into the Biweekly tab PFG input
+
+### Prereqs
+- App is running: `npm run dev`
+
+### Required environment variables
+Set these in your shell (or add them to your `.env` temporarily):
+
+```bash
+PFG_URL="(paste the PFG login or landing URL here)"
+PFG_USERNAME="your username"
+PFG_PASSWORD="your password"
+```
+
+### Run
+```bash
+npm run pw:pfg
+```
+
+If the PFG site layout differs (login fields / download button text), update selectors in `playwright/pfg-orderguide.spec.js`.
+
+Other Playwright flows (same prereq: app running on port 3000):
+
+- **GFS**: `npm run pw:gfs` — env: `GFS_URL`, `GFS_USERNAME`, `GFS_PASSWORD` (see `playwright/gfs-orderguide.spec.js`).
+- **Sysco**: `npm run pw:sysco` — env: `SYSCO_USERNAME`, `SYSCO_PASSWORD`; optional `SYSCO_URL` (defaults to `https://shop.sysco.com` if unset), optional `SYSCO_LIST_REGEX` to match the list row in the Lists dropdown (default targets “New year new guide … '26”). See `playwright/sysco-list-export.spec.js`.
+
 ## How It Works
 
 1. Upload one or more PDF or PNG party detail sheets (up to 10)

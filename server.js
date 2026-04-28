@@ -4,6 +4,9 @@ const path = require('path');
 const fs = require('fs').promises;
 const OpenAI = require('openai');
 const ExcelJS = require('exceljs');
+const os = require('os');
+const fssync = require('fs');
+const crypto = require('crypto');
 require('dotenv').config();
 
 const app = express();
@@ -65,6 +68,50 @@ const excelUpload = multer({
     }
   }
 });
+
+// Multer for CSV + Excel (biweekly provider ordering)
+const biweeklyUpload = multer({
+  storage: storage,
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB limit
+  fileFilter: (req, file, cb) => {
+    const isCsv =
+      file.mimetype === 'text/csv' ||
+      file.mimetype === 'application/csv' ||
+      file.originalname.endsWith('.csv');
+
+    const isExcel =
+      file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      file.mimetype === 'application/vnd.ms-excel' ||
+      file.originalname.endsWith('.xlsx') ||
+      file.originalname.endsWith('.xls');
+
+    if (isCsv || isExcel) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only CSV and Excel files (.csv, .xlsx, .xls) are allowed'));
+    }
+  }
+});
+
+async function downloadUrlToFile(url, targetPath, { expectExt, expectContentTypes }) {
+  const res = await fetch(url, { redirect: 'follow' });
+  if (!res.ok) {
+    throw new Error(`Failed to download (${res.status}) from ${url}`);
+  }
+  const ct = (res.headers.get('content-type') || '').toLowerCase();
+  if (expectContentTypes && expectContentTypes.length > 0) {
+    const ok = expectContentTypes.some((t) => ct.includes(t));
+    if (!ok) {
+      throw new Error(`Unexpected content-type "${ct}" for ${url}`);
+    }
+  }
+  const buf = Buffer.from(await res.arrayBuffer());
+  await fs.writeFile(targetPath, buf);
+  if (expectExt && !targetPath.toLowerCase().endsWith(expectExt)) {
+    throw new Error(`Downloaded file path does not end with ${expectExt}: ${targetPath}`);
+  }
+  return { contentType: ct, bytes: buf.length };
+}
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
@@ -460,6 +507,85 @@ async function readExcelFile(filePath) {
   };
 }
 
+// Read and parse CSV file (supports quoted fields)
+function detectCsvDelimiter(csvText) {
+  // Heuristic: choose the delimiter that appears more in the first non-empty line.
+  const firstLine = csvText.split(/\r?\n/).find(l => l && l.trim().length > 0) || '';
+  const commaCount = (firstLine.match(/,/g) || []).length;
+  const semiCount = (firstLine.match(/;/g) || []).length;
+  return semiCount > commaCount ? ';' : ',';
+}
+
+function parseCsvRows(csvText, delimiter) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < csvText.length; i++) {
+    const char = csvText[i];
+
+    if (char === '"') {
+      if (inQuotes && csvText[i + 1] === '"') {
+        // Escaped quote
+        field += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (!inQuotes && char === delimiter) {
+      row.push(field);
+      field = '';
+      continue;
+    }
+
+    if (!inQuotes && (char === '\n' || char === '\r')) {
+      // Handle CRLF
+      if (char === '\r' && csvText[i + 1] === '\n') i++;
+      row.push(field);
+      field = '';
+
+      // Avoid adding a final empty row
+      const isRowEmpty = row.every(c => (c === null || c === undefined || c.toString().trim() === ''));
+      if (!isRowEmpty) rows.push(row);
+
+      row = [];
+      continue;
+    }
+
+    field += char;
+  }
+
+  // Flush last field/row
+  row.push(field);
+  const isRowEmpty = row.every(c => (c === null || c === undefined || c.toString().trim() === ''));
+  if (!isRowEmpty) rows.push(row);
+
+  return rows;
+}
+
+async function readCsvFile(filePath) {
+  let csvText = await fs.readFile(filePath, 'utf8');
+  if (csvText.charCodeAt(0) === 0xfeff) {
+    csvText = csvText.slice(1);
+  } else if (csvText.startsWith('\uFEFF')) {
+    csvText = csvText.slice(1);
+  }
+  const delimiter = detectCsvDelimiter(csvText);
+  return parseCsvRows(csvText, delimiter);
+}
+
+function parseNumber(value) {
+  if (value === null || value === undefined) return null;
+  const str = value.toString().trim();
+  if (!str) return null;
+  const num = parseFloat(str.replace(/[^0-9.-]/g, ''));
+  return isNaN(num) ? null : num;
+}
+
 // Use OpenAI to identify which columns contain product description, unit price, and date
 async function identifyExcelColumns(headers, sampleData) {
   const systemPrompt = `You are an expert at analyzing Excel file structures. Given a list of column headers and sample data, identify which columns contain:
@@ -689,6 +815,213 @@ function matchProductName(productName, referenceProducts) {
   return null; // No match found
 }
 
+/**
+ * Map order-guide / CSV line text to a **reference** using:
+ * 1) Direct / normalized key in `productMapping` (explicit B/D/E, US, and extra-column aliases)
+ * 2) Substring / token match against any `productMapping` key
+ * 3) Fuzzy `matchProductName` using `fuzzyReferenceCandidates` (per no–US-foods: only refs whose
+ *    primary PFG/Sysco/GFS cell was empty; use full `referenceProducts` for 4-vendor or when list is empty)
+ */
+function matchProviderToMappingProduct(providerProductName, productMapping, fuzzyReferenceCandidates) {
+  if (!providerProductName) return null;
+  const n = normalizeProductName(providerProductName);
+  if (!n) return null;
+
+  if (productMapping.has(n)) {
+    return productMapping.get(n);
+  }
+
+  let bestRef = null;
+  let bestScore = 0;
+  let bestKeyLen = 0;
+  for (const [k, ref] of productMapping.entries()) {
+    if (k.length < 4) continue;
+    let score = 0;
+    if (k === n) {
+      score = 1;
+    } else if (n.includes(k) || k.includes(n)) {
+      score = 0.95;
+    } else {
+      const kTokens = k.split(/\s+/).filter(t => t.length > 1);
+      if (kTokens.length < 2) continue;
+      let inter = 0;
+      for (const t of kTokens) {
+        if (n.includes(t) || n.split(/\s+/).indexOf(t) >= 0) inter++;
+      }
+      score = inter / kTokens.length;
+    }
+    if (score > bestScore || (score === bestScore && score > 0 && k.length > bestKeyLen)) {
+      bestScore = score;
+      bestRef = ref;
+      bestKeyLen = k.length;
+    }
+  }
+  if (bestScore >= 0.5 && bestRef) {
+    return bestRef;
+  }
+
+  if (!fuzzyReferenceCandidates || fuzzyReferenceCandidates.length === 0) return null;
+  return matchProductName(providerProductName, fuzzyReferenceCandidates);
+}
+
+/**
+ * GFS order guides: product is often in A or B; your sheet uses **E** for unit price. Infer which
+ * column has the long description by looking at rows with a price in E.
+ */
+function inferGfsOrderGuideLayout(csvRows) {
+  const n = Math.min(csvRows.length, 200);
+  const colVotes = new Map();
+  const priceCol = 4; // E
+
+  for (let r = 0; r < n; r++) {
+    const row = csvRows[r] || [];
+    const price = parseNumber(row[priceCol]);
+    if (price === null || price <= 0) continue;
+    let bestC = 0;
+    let bestLen = 0;
+    for (let c = 0; c < Math.min(row.length, 16); c++) {
+      if (c === priceCol) continue;
+      const t = (row[c] || '').toString().trim();
+      if (t.length < 4) continue;
+      if (/^[$]?\s*[\d,]+\.?\d*\s*$/i.test(t)) continue;
+      if (t.length > bestLen) {
+        bestLen = t.length;
+        bestC = c;
+      }
+    }
+    if (bestLen >= 4) {
+      colVotes.set(bestC, (colVotes.get(bestC) || 0) + 1);
+    }
+  }
+
+  let productCol = 1; // B — previous default
+  if (colVotes.size > 0) {
+    const sorted = [...colVotes.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]);
+    productCol = sorted[0][0];
+  }
+
+  let startIndex0 = 1;
+  for (let r = 0; r < n; r++) {
+    const row = csvRows[r] || [];
+    const pr = (row[productCol] || '').toString().trim();
+    const price = parseNumber(row[priceCol]);
+    if (pr.length >= 4 && price !== null && price > 0) {
+      startIndex0 = r;
+      break;
+    }
+  }
+
+  return { productCol, priceCol, startIndex0 };
+}
+
+function inferProviderDataStartIndex(csvRows, productCol, priceCol, defaultStartIndex0) {
+  for (let r = 0; r < Math.min(50, csvRows.length); r++) {
+    const row = csvRows[r] || [];
+    const pr = (row[productCol] || '').toString().trim();
+    const price = parseNumber(row[priceCol]);
+    if (pr.length >= 3 && price !== null && price > 0) return r;
+  }
+  return defaultStartIndex0;
+}
+
+function parseBiweeklyIntEnv(name, def) {
+  const v = (process.env[name] || '').trim();
+  if (v === '') return def;
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? n : def;
+}
+
+function parseBiweeklyStartRow1Env(name) {
+  const v = (process.env[name] || '').trim();
+  if (v === '') return null;
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) && n >= 1 ? n : null;
+}
+
+function buildGfsProviderExtractOptions(gfsCsvRows) {
+  const inf = inferGfsOrderGuideLayout(gfsCsvRows);
+  const productCol = parseBiweeklyIntEnv('BIWEEKLY_GFS_PRODUCT_COL', inf.productCol);
+  const priceCol = parseBiweeklyIntEnv('BIWEEKLY_GFS_PRICE_COL', inf.priceCol);
+  const start1 = parseBiweeklyStartRow1Env('BIWEEKLY_GFS_START_ROW');
+  const startIndex0 =
+    start1 != null
+      ? start1 - 1
+      : inferProviderDataStartIndex(gfsCsvRows, productCol, priceCol, inf.startIndex0);
+  const opt = { vendorName: 'GFS', productCol, priceCol, startRow: startIndex0 + 1 };
+  if ((process.env.BIWEEKLY_DEBUG_LAYOUT || '').trim() === '1') {
+    console.log('[biweekly] GFS CSV layout (0-based product/price cols):', {
+      productCol,
+      priceCol,
+      dataStartRow1: opt.startRow
+    });
+  }
+  return opt;
+}
+
+function buildPfgProviderExtractOptions(pfgCsvRows) {
+  const productCol = parseBiweeklyIntEnv('BIWEEKLY_PFG_PRODUCT_COL', 0);
+  const priceCol = parseBiweeklyIntEnv('BIWEEKLY_PFG_PRICE_COL', 7);
+  const start1 = parseBiweeklyStartRow1Env('BIWEEKLY_PFG_START_ROW');
+  const minDataRow0 = 8; // row 9: known PFG order-guide template
+  const startIndex0 =
+    start1 != null
+      ? start1 - 1
+      : Math.max(
+          minDataRow0,
+          inferProviderDataStartIndex(pfgCsvRows, productCol, priceCol, minDataRow0)
+        );
+  return { vendorName: 'PFG', productCol, priceCol, startRow: startIndex0 + 1 };
+}
+
+function buildSyscoProviderExtractOptions(syscoCsvRows) {
+  const productCol = parseBiweeklyIntEnv('BIWEEKLY_SYSCO_PRODUCT_COL', 12);
+  const priceCol = parseBiweeklyIntEnv('BIWEEKLY_SYSCO_PRICE_COL', 14);
+  const start1 = parseBiweeklyStartRow1Env('BIWEEKLY_SYSCO_START_ROW');
+  const minDataRow0 = 2; // row 3: typical header + blank row
+  const startIndex0 =
+    start1 != null
+      ? start1 - 1
+      : Math.max(
+          minDataRow0,
+          inferProviderDataStartIndex(syscoCsvRows, productCol, priceCol, minDataRow0)
+        );
+  return { vendorName: 'Sysco', productCol, priceCol, startRow: startIndex0 + 1 };
+}
+
+/**
+ * Map inventory / order-sheet product text (e.g. CSV col B) to a mapping **reference** name (col A) so
+ * it matches keys in `providerPriceByVendor` (which are always canonical reference names).
+ * Order: exact string → normalized exact → alias in productMapping (same as provider PFG/Sysco/GFS text) → fuzzy matchProductName
+ */
+function resolveInventoryToReferenceProductName(inventoryName, productMapping, referenceProducts) {
+  if (!inventoryName) return null;
+  const trimmed = String(inventoryName).trim();
+  if (!trimmed) return null;
+  if (!referenceProducts || referenceProducts.length === 0) return null;
+
+  for (const ref of referenceProducts) {
+    if (ref === trimmed) return ref;
+  }
+  const nInv = normalizeProductName(trimmed);
+  for (const ref of referenceProducts) {
+    if (normalizeProductName(ref) === nInv) return ref;
+  }
+  if (productMapping.has(nInv)) {
+    return productMapping.get(nInv);
+  }
+  return matchProductName(trimmed, referenceProducts);
+}
+
+function isUsFoodsMappingHeader(header) {
+  const h = String(header || '')
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .trim();
+  if (h.includes('us food')) return true;
+  if (/(^|\s)usf(\s|$)/.test(h)) return true;
+  return false;
+}
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ 
@@ -697,11 +1030,730 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Helper: parse Sysco Excel file (fixed columns: H = product, K = price)
+async function extractSyscoDataFromExcel(filePath, filename, manualDate) {
+  try {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(filePath);
+    const worksheet = workbook.worksheets[0];
+
+    const extractedData = [];
+
+    // Assuming row 1 is header, start from row 2
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+
+      const productCell = row.getCell(8);  // Column H
+      const priceCell = row.getCell(11);   // Column K
+
+      const productName = productCell && productCell.value ? productCell.value.toString().trim() : '';
+      const priceStr = priceCell && priceCell.value ? priceCell.value.toString().trim() : '';
+
+      if (!productName || !priceStr) return;
+
+      const price = parseFloat(priceStr.replace(/[^0-9.-]/g, ''));
+      if (isNaN(price) || price <= 0) return;
+
+      const date = manualDate || new Date().toISOString().split('T')[0];
+
+      extractedData.push({
+        productName,
+        unitPrice: price,
+        date,
+        sourceFile: filename,
+        rawRow: {
+          H: productCell.value,
+          K: priceCell.value
+        }
+      });
+    });
+
+    return extractedData;
+  } catch (error) {
+    throw new Error(`Error processing Sysco Excel file ${filename}: ${error.message}`);
+  }
+}
+
+// Helper: parse US Foods Excel file (fixed columns: B = product, G = price)
+async function extractUsFoodsDataFromExcel(filePath, filename, manualDate) {
+  try {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(filePath);
+    const worksheet = workbook.worksheets[0];
+
+    const extractedData = [];
+
+    // Assuming row 1 is header, start from row 2
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+
+      const productCell = row.getCell(2);  // Column B
+      const priceCell = row.getCell(7);   // Column G
+
+      const productName = productCell && productCell.value ? productCell.value.toString().trim() : '';
+      const priceStr = priceCell && priceCell.value ? priceCell.value.toString().trim() : '';
+
+      if (!productName || !priceStr) return;
+
+      const price = parseFloat(priceStr.replace(/[^0-9.-]/g, ''));
+      if (isNaN(price) || price <= 0) return;
+
+      const date = manualDate || new Date().toISOString().split('T')[0];
+
+      extractedData.push({
+        productName,
+        unitPrice: price,
+        date,
+        sourceFile: filename,
+        rawRow: {
+          B: productCell.value,
+          G: priceCell.value
+        }
+      });
+    });
+
+    return extractedData;
+  } catch (error) {
+    throw new Error(`Error processing US Foods Excel file ${filename}: ${error.message}`);
+  }
+}
+
+// Biweekly ordering helpers
+function mappingCellToString(v) {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return v.toString();
+  if (v instanceof Date) return v.toISOString();
+  if (typeof v === 'object') {
+    if (v.text) return String(v.text);
+    if (Array.isArray(v.richText)) return v.richText.map((p) => p.text || '').join('');
+  }
+  return v.toString();
+}
+
+/**
+ * @param {string} mappingFilePath
+ * @param {{ includeUsFoodsColumn?: boolean }} [opts]
+ */
+async function buildProductMappingFromExcelFixedColumns(mappingFilePath, opts = {}) {
+  const { includeUsFoodsColumn = true } = opts;
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(mappingFilePath);
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) {
+    return {
+      productMapping: new Map(),
+      referenceProducts: [],
+      refsNoPrimaryPfg: [],
+      refsNoPrimarySysco: [],
+      refsNoPrimaryGfs: []
+    };
+  }
+
+  const productMapping = new Map(); // normalized provider product -> reference product
+  const referenceProductsSet = new Set();
+  const refsNoPrimaryPfg = new Set();
+  const refsNoPrimarySysco = new Set();
+  const refsNoPrimaryGfs = new Set();
+
+  const setAlias = (aliasRaw, refName) => {
+    const alias = (aliasRaw || '').toString().trim();
+    if (!alias) return;
+    const normalized = normalizeProductName(alias);
+    productMapping.set(normalized, refName);
+  };
+
+  // Row 1 = headers; data starts at row 2
+  const maxCol = Math.min(50, Math.max(5, worksheet.columnCount || 5));
+  for (let r = 2; r <= worksheet.rowCount; r++) {
+    const row = worksheet.getRow(r);
+    const refName = mappingCellToString(row.getCell(1).value).trim(); // A
+    if (!refName) continue;
+    referenceProductsSet.add(refName);
+
+    // Primary vendor columns (1-based, per user sheet layout):
+    // A = canonical/reference name (inventory / order sheet naming)
+    // B = PFG order-guide product text
+    // C = US Foods order-guide product text (skipped when includeUsFoodsColumn is false)
+    // D = Sysco order-guide product text
+    // E = GFS order-guide product text
+    const pfg = mappingCellToString(row.getCell(2).value);
+    const usFoods = includeUsFoodsColumn ? mappingCellToString(row.getCell(3).value) : '';
+    const sysco = mappingCellToString(row.getCell(4).value);
+    const gfs = mappingCellToString(row.getCell(5).value);
+    setAlias(pfg, refName);
+    if (includeUsFoodsColumn) setAlias(usFoods, refName);
+    setAlias(sysco, refName);
+    setAlias(gfs, refName);
+
+    // Also treat any other non-empty cells in the row as extra aliases
+    // (e.g. alternate spellings in columns beyond E), excluding col A
+    for (let c = 2; c <= maxCol; c++) {
+      // Column C = US Foods aliases (only for the 4-vendor flow)
+      if (c === 3 && !includeUsFoodsColumn) continue;
+      if ([2, 3, 4, 5].includes(c)) continue; // already handled (B, C?, D, E)
+      const t = mappingCellToString(row.getCell(c).value).trim();
+      if (!t) continue;
+      setAlias(t, refName);
+    }
+  }
+
+  return {
+    productMapping,
+    referenceProducts: Array.from(referenceProductsSet),
+    refsNoPrimaryPfg: Array.from(refsNoPrimaryPfg),
+    refsNoPrimarySysco: Array.from(refsNoPrimarySysco),
+    refsNoPrimaryGfs: Array.from(refsNoPrimaryGfs)
+  };
+}
+
+/**
+ * @param {string} mappingFilePath
+ * @param {{ includeUsFoodsColumn?: boolean }} [opts]
+ */
+async function buildProductMappingFromExcel(mappingFilePath, opts = {}) {
+  const mode = (process.env.BIWEEKLY_MAPPING_LAYOUT || 'fixed').toLowerCase();
+  if (mode === 'auto' || mode === 'legacy' || mode === 'heuristic') {
+    return buildProductMappingFromExcelHeuristicHeaders(mappingFilePath, opts);
+  }
+  if (mode === 'fixed') {
+    return buildProductMappingFromExcelFixedColumns(mappingFilePath, opts);
+  }
+  throw new Error(`Invalid BIWEEKLY_MAPPING_LAYOUT="${process.env.BIWEEKLY_MAPPING_LAYOUT}" (use fixed|auto)`);
+}
+
+// Legacy mapping: infer reference column from header name; treat remaining columns as provider aliases
+async function buildProductMappingFromExcelHeuristicHeaders(mappingFilePath, opts = {}) {
+  const { includeUsFoodsColumn = true } = opts;
+  const mappingData = await readExcelFile(mappingFilePath);
+
+  // New structure: First column is reference product name (or a column containing "reference"/"target"/etc)
+  let referenceColumnIndex = 0;
+  let referenceColumn = mappingData.headers[0];
+
+  mappingData.headers.forEach((header, index) => {
+    const lowerHeader = header.toLowerCase();
+    if (
+      lowerHeader.includes('reference') ||
+      lowerHeader.includes('target') ||
+      lowerHeader.includes('match') ||
+      lowerHeader.includes('standard')
+    ) {
+      referenceColumnIndex = index;
+      referenceColumn = header;
+    }
+  });
+
+  const invoiceColumns = mappingData.headers.filter((_, index) => index !== referenceColumnIndex);
+  const productMapping = new Map(); // normalized provider product -> reference product
+  const referenceProductsSet = new Set();
+
+  mappingData.data.forEach(row => {
+    const refName = row[referenceColumn]?.toString().trim();
+    if (!refName) return;
+    referenceProductsSet.add(refName);
+
+    invoiceColumns.forEach(invoiceColumn => {
+      if (!includeUsFoodsColumn && isUsFoodsMappingHeader(String(invoiceColumn || ''))) {
+        return;
+      }
+      const invoiceName = row[invoiceColumn]?.toString().trim();
+      if (invoiceName) {
+        const normalizedInvoice = normalizeProductName(invoiceName);
+        productMapping.set(normalizedInvoice, refName);
+      }
+    });
+  });
+
+  const referenceProducts = Array.from(referenceProductsSet);
+  return {
+    productMapping,
+    referenceProducts,
+    // Heuristic layout has no fixed B/D/E columns; fuzzy against all references (same as 4-vendor).
+    refsNoPrimaryPfg: referenceProducts,
+    refsNoPrimarySysco: referenceProducts,
+    refsNoPrimaryGfs: referenceProducts
+  };
+}
+
+function upsertMin(map, key, value) {
+  if (!map.has(key)) {
+    map.set(key, value);
+    return;
+  }
+  const existing = map.get(key);
+  if (value < existing) map.set(key, value);
+}
+
+function upsertMax(map, key, value) {
+  if (!map.has(key)) {
+    map.set(key, value);
+    return;
+  }
+  const existing = map.get(key);
+  if (value > existing) map.set(key, value);
+}
+
+function extractInventoryQuantitiesFromCsvRows(csvRows) {
+  // Inventory CSV: product in column B (index 1), quantity in column K (index 10), data starts on row 2 (index 1).
+  const quantities = new Map();
+  for (let r = 1; r < csvRows.length; r++) {
+    const row = csvRows[r] || [];
+    const productName = (row[1] || '').toString().trim(); // Column B
+    const qtyNum = parseNumber(row[10]); // Column K
+
+    if (!productName || qtyNum === null) continue;
+    if (qtyNum <= 0) continue;
+
+    // Inventory sheet may have duplicate products; sum them.
+    const existing = quantities.get(productName) || 0;
+    quantities.set(productName, existing + qtyNum);
+  }
+  return quantities;
+}
+
+function extractProviderPricesFromCsvRows(csvRows, productMapping, referenceProducts) {
+  const vendorDefinitions = [
+    { name: 'US Foods', productCol: 3, priceCol: 7 }, // D/H
+    { name: 'PFG', productCol: 0, priceCol: 7 }, // A/H
+    { name: 'Sysco', productCol: 12, priceCol: 14 }, // M/O
+    { name: 'GFS', productCol: 1, priceCol: 4 } // B/E
+  ];
+
+  const providerPriceByVendor = {};
+  vendorDefinitions.forEach(v => {
+    providerPriceByVendor[v.name] = new Map(); // canonical product -> min unit price
+  });
+
+  const matchedRecords = {
+    mapped: 0,
+    fuzzyMatched: 0,
+    unmatched: 0
+  };
+
+  csvRows.forEach(row => {
+    vendorDefinitions.forEach(v => {
+      const providerProductName = (row[v.productCol] || '').toString().trim();
+      const unitPrice = parseNumber(row[v.priceCol]);
+      if (!providerProductName || unitPrice === null || unitPrice <= 0) return;
+
+      const normalizedProviderProduct = normalizeProductName(providerProductName);
+      const mappedProduct = matchProviderToMappingProduct(
+        providerProductName,
+        productMapping,
+        referenceProducts
+      );
+
+      if (mappedProduct) {
+        if (productMapping.has(normalizedProviderProduct)) {
+          matchedRecords.mapped++;
+        } else {
+          matchedRecords.fuzzyMatched++;
+        }
+
+        upsertMin(providerPriceByVendor[v.name], mappedProduct, unitPrice);
+      } else {
+        matchedRecords.unmatched++;
+      }
+    });
+  });
+
+  return {
+    providerPriceByVendor,
+    matchedRecords
+  };
+}
+
+function extractProviderPricesFromSingleCsvRows(csvRows, options, productMapping, fuzzyReferenceCandidates) {
+  const {
+    vendorName,
+    productCol,
+    priceCol,
+    startRow // 1-based row number in the CSV file where data begins
+  } = options;
+
+  const providerPriceByVendor = {};
+  providerPriceByVendor[vendorName] = new Map(); // canonical product -> chosen unit price (case/4-pack => max)
+
+  // Track how many source rows mapped to a canonical product for this vendor.
+  // If >1, we can show a note in the UI that case/4-pack pricing was used.
+  const matchedRowCountsByProduct = new Map(); // canonical product -> count
+
+  const matchedRecords = {
+    mapped: 0,
+    fuzzyMatched: 0,
+    unmatched: 0
+  };
+
+  // Convert 1-based startRow to 0-based index.
+  const startIndex = Math.max(0, startRow - 1);
+
+  for (let r = startIndex; r < csvRows.length; r++) {
+    const row = csvRows[r] || [];
+    const providerProductName = (row[productCol] || '').toString().trim();
+    const unitPrice = parseNumber(row[priceCol]);
+
+    if (!providerProductName || unitPrice === null || unitPrice <= 0) continue;
+
+    const normalizedProviderProduct = normalizeProductName(providerProductName);
+    const mappedProduct = matchProviderToMappingProduct(
+      providerProductName,
+      productMapping,
+      fuzzyReferenceCandidates
+    );
+
+    if (mappedProduct) {
+      if (productMapping.has(normalizedProviderProduct)) {
+        matchedRecords.mapped++;
+      } else {
+        matchedRecords.fuzzyMatched++;
+      }
+
+      matchedRowCountsByProduct.set(mappedProduct, (matchedRowCountsByProduct.get(mappedProduct) || 0) + 1);
+
+      // Pack-size rule: if multiple rows map to same canonical product at this vendor,
+      // keep the MORE EXPENSIVE unit price (case/4-pack) rather than the cheapest.
+      upsertMax(providerPriceByVendor[vendorName], mappedProduct, unitPrice);
+    } else {
+      matchedRecords.unmatched++;
+    }
+  }
+
+  return {
+    providerPriceByVendor,
+    matchedRecords,
+    matchedRowCountsByProduct
+  };
+}
+
+// Biweekly order recommendation endpoint
+app.post('/api/biweekly-order', biweeklyUpload.fields([
+  { name: 'inventoryCsv', maxCount: 1 },
+  { name: 'usFoodsCsv', maxCount: 1 },
+  { name: 'pfgCsv', maxCount: 1 },
+  { name: 'syscoCsv', maxCount: 1 },
+  { name: 'gfsCsv', maxCount: 1 },
+  { name: 'mappingSheet', maxCount: 1 }
+]), async (req, res) => {
+  const inventoryFile = req.files?.inventoryCsv?.[0] || null;
+  const usFoodsFile = req.files?.usFoodsCsv?.[0] || null;
+  const pfgFile = req.files?.pfgCsv?.[0] || null;
+  const syscoFile = req.files?.syscoCsv?.[0] || null;
+  const gfsFile = req.files?.gfsCsv?.[0] || null;
+  const mappingFile = req.files?.mappingSheet?.[0] || null;
+
+  try {
+    if (!inventoryFile || !usFoodsFile || !pfgFile || !syscoFile || !gfsFile || !mappingFile) {
+      return res.status(400).json({ error: 'Please upload inventoryCsv, usFoodsCsv, pfgCsv, syscoCsv, gfsCsv, and mappingSheet' });
+    }
+
+    const [inventoryCsvRows, usFoodsCsvRows, pfgCsvRows, syscoCsvRows, gfsCsvRows] = await Promise.all([
+      readCsvFile(inventoryFile.path),
+      readCsvFile(usFoodsFile.path),
+      readCsvFile(pfgFile.path),
+      readCsvFile(syscoFile.path),
+      readCsvFile(gfsFile.path)
+    ]);
+
+    const { productMapping, referenceProducts } = await buildProductMappingFromExcel(mappingFile.path);
+
+    const inventoryQuantities = extractInventoryQuantitiesFromCsvRows(inventoryCsvRows);
+
+    const [
+      usFoodsResult,
+      pfgResult,
+      syscoResult,
+      gfsResult
+    ] = [
+      extractProviderPricesFromSingleCsvRows(usFoodsCsvRows, { vendorName: 'US Foods', productCol: 3, priceCol: 7, startRow: 2 }, productMapping, referenceProducts),
+      extractProviderPricesFromSingleCsvRows(pfgCsvRows, buildPfgProviderExtractOptions(pfgCsvRows), productMapping, referenceProducts),
+      extractProviderPricesFromSingleCsvRows(syscoCsvRows, buildSyscoProviderExtractOptions(syscoCsvRows), productMapping, referenceProducts),
+      extractProviderPricesFromSingleCsvRows(gfsCsvRows, buildGfsProviderExtractOptions(gfsCsvRows), productMapping, referenceProducts)
+    ];
+
+    const providerPriceByVendor = {
+      'US Foods': usFoodsResult.providerPriceByVendor['US Foods'],
+      PFG: pfgResult.providerPriceByVendor['PFG'],
+      Sysco: syscoResult.providerPriceByVendor['Sysco'],
+      GFS: gfsResult.providerPriceByVendor['GFS']
+    };
+
+    const multiPackByVendor = {
+      'US Foods': usFoodsResult.matchedRowCountsByProduct,
+      PFG: pfgResult.matchedRowCountsByProduct,
+      Sysco: syscoResult.matchedRowCountsByProduct,
+      GFS: gfsResult.matchedRowCountsByProduct
+    };
+
+    const matchedRecords = {
+      mapped: usFoodsResult.matchedRecords.mapped + pfgResult.matchedRecords.mapped + syscoResult.matchedRecords.mapped + gfsResult.matchedRecords.mapped,
+      fuzzyMatched: usFoodsResult.matchedRecords.fuzzyMatched + pfgResult.matchedRecords.fuzzyMatched + syscoResult.matchedRecords.fuzzyMatched + gfsResult.matchedRecords.fuzzyMatched,
+      unmatched: usFoodsResult.matchedRecords.unmatched + pfgResult.matchedRecords.unmatched + syscoResult.matchedRecords.unmatched + gfsResult.matchedRecords.unmatched
+    };
+
+    const vendorTotals = {
+      'US Foods': 0,
+      PFG: 0,
+      Sysco: 0,
+      GFS: 0
+    };
+
+    const recommendations = [];
+    const unmatchedItems = [];
+
+    for (const [inventoryLabel, quantity] of inventoryQuantities.entries()) {
+      const canonical = resolveInventoryToReferenceProductName(inventoryLabel, productMapping, referenceProducts);
+      if (!canonical) {
+        unmatchedItems.push({ productName: inventoryLabel, quantity, reason: 'inventory_not_in_mapping' });
+        continue;
+      }
+
+      let best = null; // { vendor, unitPrice }
+
+      for (const vendor of Object.keys(providerPriceByVendor)) {
+        const unitPrice = providerPriceByVendor[vendor].get(canonical);
+        if (unitPrice === undefined) continue;
+        if (!best || unitPrice < best.unitPrice) {
+          best = { vendor, unitPrice };
+        }
+      }
+
+      if (!best) {
+        unmatchedItems.push({
+          productName: inventoryLabel,
+          quantity,
+          referenceProduct: canonical,
+          reason: 'no_price_for_reference'
+        });
+        continue;
+      }
+
+      const lineTotal = quantity * best.unitPrice;
+      vendorTotals[best.vendor] += lineTotal;
+
+      const vendorCounts = multiPackByVendor[best.vendor];
+      const mappedRowCount = vendorCounts ? (vendorCounts.get(canonical) || 0) : 0;
+      const packNote = mappedRowCount > 1 ? 'Case/4-pack price used (multiple pack options found)' : null;
+
+      recommendations.push({
+        productName: inventoryLabel,
+        referenceProduct: canonical,
+        quantity,
+        vendor: best.vendor,
+        unitPrice: best.unitPrice,
+        lineTotal,
+        packNote
+      });
+    }
+
+    const grandTotal = Object.values(vendorTotals).reduce((sum, v) => sum + v, 0);
+
+    res.json({
+      success: true,
+      summary: {
+        recommendationsCount: recommendations.length,
+        unmatchedCount: unmatchedItems.length,
+        grandTotal: parseFloat(grandTotal.toFixed(2)),
+        vendorTotals
+      },
+      matchedRecords,
+      recommendations,
+      unmatchedItems
+    });
+  } catch (error) {
+    console.error('Biweekly order processing error:', error);
+    res.status(500).json({ error: error.message });
+  } finally {
+    // Cleanup uploaded files
+    for (const f of [inventoryFile, usFoodsFile, pfgFile, syscoFile, gfsFile, mappingFile]) {
+      if (f && f.path) {
+        try {
+          await fs.unlink(f.path);
+        } catch (unlinkError) {
+          console.error('Error deleting uploaded file:', unlinkError);
+        }
+      }
+    }
+  }
+});
+
+// Biweekly order recommendation endpoint (no US Foods) — supports Google Sheets fallback for inventory + mapping.
+app.post(
+  '/api/biweekly-order-no-usfoods',
+  biweeklyUpload.fields([
+    { name: 'inventoryCsv', maxCount: 1 },
+    { name: 'pfgCsv', maxCount: 1 },
+    { name: 'syscoCsv', maxCount: 1 },
+    { name: 'gfsCsv', maxCount: 1 },
+    { name: 'mappingSheet', maxCount: 1 }
+  ]),
+  async (req, res) => {
+    const inventoryFile = req.files?.inventoryCsv?.[0] || null;
+    const pfgFile = req.files?.pfgCsv?.[0] || null;
+    const syscoFile = req.files?.syscoCsv?.[0] || null;
+    const gfsFile = req.files?.gfsCsv?.[0] || null;
+    const mappingFile = req.files?.mappingSheet?.[0] || null;
+
+    const invUrl = (process.env.BIWEEKLY_INVENTORY_SHEET_URL || '').trim();
+    const mapUrl = (process.env.BIWEEKLY_MAPPING_SHEET_URL || '').trim();
+
+    const tmpRoot = path.join(os.tmpdir(), 'onpar-biweekly');
+    const tmpId = crypto.randomBytes(8).toString('hex');
+    const tmpDir = path.join(tmpRoot, tmpId);
+
+    try {
+      if (!pfgFile || !syscoFile || !gfsFile) {
+        return res.status(400).json({ error: 'Please upload pfgCsv, syscoCsv, and gfsCsv' });
+      }
+
+      // Inventory + mapping can come from uploads OR from Google Sheets export URLs.
+      let inventoryPath = inventoryFile?.path || null;
+      let mappingPath = mappingFile?.path || null;
+
+      if (!inventoryPath) {
+        if (!invUrl) return res.status(400).json({ error: 'Missing inventoryCsv (or set BIWEEKLY_INVENTORY_SHEET_URL)' });
+        await fs.mkdir(tmpDir, { recursive: true });
+        inventoryPath = path.join(tmpDir, 'inventory.csv');
+        await downloadUrlToFile(invUrl, inventoryPath, { expectExt: '.csv', expectContentTypes: ['text/csv', 'application/csv'] });
+      }
+
+      if (!mappingPath) {
+        if (!mapUrl) return res.status(400).json({ error: 'Missing mappingSheet (or set BIWEEKLY_MAPPING_SHEET_URL)' });
+        await fs.mkdir(tmpDir, { recursive: true });
+        mappingPath = path.join(tmpDir, 'mapping.xlsx');
+        await downloadUrlToFile(mapUrl, mappingPath, {
+          expectExt: '.xlsx',
+          expectContentTypes: [
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/octet-stream'
+          ]
+        });
+      }
+
+      const [inventoryCsvRows, pfgCsvRows, syscoCsvRows, gfsCsvRows] = await Promise.all([
+        readCsvFile(inventoryPath),
+        readCsvFile(pfgFile.path),
+        readCsvFile(syscoFile.path),
+        readCsvFile(gfsFile.path)
+      ]);
+
+      const {
+        productMapping,
+        referenceProducts,
+        refsNoPrimaryPfg,
+        refsNoPrimarySysco,
+        refsNoPrimaryGfs
+      } = await buildProductMappingFromExcel(mappingPath, { includeUsFoodsColumn: false });
+      const inventoryQuantities = extractInventoryQuantitiesFromCsvRows(inventoryCsvRows);
+
+      // No–US-foods: fuzzy fallback only against references whose primary PFG/Sysco/GFS cell (B/D/E) was empty;
+      // if every row had a primary for that vendor, fall back to all references (same as 4-vendor).
+      const fuzzyPfg = refsNoPrimaryPfg.length > 0 ? refsNoPrimaryPfg : referenceProducts;
+      const fuzzySysco = refsNoPrimarySysco.length > 0 ? refsNoPrimarySysco : referenceProducts;
+      const fuzzyGfs = refsNoPrimaryGfs.length > 0 ? refsNoPrimaryGfs : referenceProducts;
+
+      const [pfgResult, syscoResult, gfsResult] = [
+        extractProviderPricesFromSingleCsvRows(pfgCsvRows, buildPfgProviderExtractOptions(pfgCsvRows), productMapping, fuzzyPfg),
+        extractProviderPricesFromSingleCsvRows(syscoCsvRows, buildSyscoProviderExtractOptions(syscoCsvRows), productMapping, fuzzySysco),
+        extractProviderPricesFromSingleCsvRows(gfsCsvRows, buildGfsProviderExtractOptions(gfsCsvRows), productMapping, fuzzyGfs)
+      ];
+
+      const providerPriceByVendor = {
+        PFG: pfgResult.providerPriceByVendor['PFG'],
+        Sysco: syscoResult.providerPriceByVendor['Sysco'],
+        GFS: gfsResult.providerPriceByVendor['GFS']
+      };
+
+      const multiPackByVendor = {
+        PFG: pfgResult.matchedRowCountsByProduct,
+        Sysco: syscoResult.matchedRowCountsByProduct,
+        GFS: gfsResult.matchedRowCountsByProduct
+      };
+
+      const matchedRecords = {
+        mapped: pfgResult.matchedRecords.mapped + syscoResult.matchedRecords.mapped + gfsResult.matchedRecords.mapped,
+        fuzzyMatched: pfgResult.matchedRecords.fuzzyMatched + syscoResult.matchedRecords.fuzzyMatched + gfsResult.matchedRecords.fuzzyMatched,
+        unmatched: pfgResult.matchedRecords.unmatched + syscoResult.matchedRecords.unmatched + gfsResult.matchedRecords.unmatched
+      };
+
+      const vendorTotals = { PFG: 0, Sysco: 0, GFS: 0 };
+      const recommendations = [];
+      const unmatchedItems = [];
+
+      for (const [inventoryLabel, quantity] of inventoryQuantities.entries()) {
+        const canonical = resolveInventoryToReferenceProductName(inventoryLabel, productMapping, referenceProducts);
+        if (!canonical) {
+          unmatchedItems.push({ productName: inventoryLabel, quantity, reason: 'inventory_not_in_mapping' });
+          continue;
+        }
+
+        let best = null;
+        for (const vendor of Object.keys(providerPriceByVendor)) {
+          const unitPrice = providerPriceByVendor[vendor].get(canonical);
+          if (unitPrice === undefined) continue;
+          if (!best || unitPrice < best.unitPrice) best = { vendor, unitPrice };
+        }
+        if (!best) {
+          unmatchedItems.push({
+            productName: inventoryLabel,
+            quantity,
+            referenceProduct: canonical,
+            reason: 'no_price_for_reference'
+          });
+          continue;
+        }
+
+        const lineTotal = quantity * best.unitPrice;
+        vendorTotals[best.vendor] += lineTotal;
+
+        const vendorCounts = multiPackByVendor[best.vendor];
+        const mappedRowCount = vendorCounts ? (vendorCounts.get(canonical) || 0) : 0;
+        const packNote = mappedRowCount > 1 ? 'Case/4-pack price used (multiple pack options found)' : null;
+
+        recommendations.push({
+          productName: inventoryLabel,
+          referenceProduct: canonical,
+          quantity,
+          vendor: best.vendor,
+          unitPrice: best.unitPrice,
+          lineTotal,
+          packNote
+        });
+      }
+
+      const grandTotal = Object.values(vendorTotals).reduce((sum, v) => sum + v, 0);
+
+      res.json({
+        success: true,
+        summary: {
+          recommendationsCount: recommendations.length,
+          unmatchedCount: unmatchedItems.length,
+          grandTotal: parseFloat(grandTotal.toFixed(2)),
+          vendorTotals
+        },
+        matchedRecords,
+        recommendations,
+        unmatchedItems
+      });
+    } catch (error) {
+      res.status(500).json({ error: error.message || 'Server error' });
+    } finally {
+      // best-effort cleanup
+      try {
+        if (tmpDir.startsWith(tmpRoot) && fssync.existsSync(tmpDir)) {
+          await fs.rm(tmpDir, { recursive: true, force: true });
+        }
+      } catch {}
+    }
+  }
+);
+
 // Vendor Cost Management endpoint
 app.post('/api/vendor-costs', excelUpload.fields([
   { name: 'referenceSheet', maxCount: 1 },
   { name: 'mappingSheet', maxCount: 1 },
-  { name: 'vendorFiles', maxCount: 50 }
+  { name: 'vendorFiles', maxCount: 50 },
+  { name: 'syscoFiles', maxCount: 50 },
+  { name: 'usFoodsFiles', maxCount: 50 }
 ]), async (req, res) => {
   try {
     if (!req.files || !req.files.referenceSheet || !req.files.vendorFiles || req.files.vendorFiles.length === 0) {
@@ -715,6 +1767,36 @@ app.post('/api/vendor-costs', excelUpload.fields([
     const referenceFile = req.files.referenceSheet[0];
     const mappingFile = req.files.mappingSheet && req.files.mappingSheet[0] ? req.files.mappingSheet[0] : null;
     const vendorFiles = Array.isArray(req.files.vendorFiles) ? req.files.vendorFiles : [req.files.vendorFiles];
+
+    // Sysco-specific files with manual dates
+    const syscoFiles = req.files.syscoFiles
+      ? (Array.isArray(req.files.syscoFiles) ? req.files.syscoFiles : [req.files.syscoFiles])
+      : [];
+
+    // Multer parses non-file fields into req.body; syscoDates may be a string or array
+    let syscoDates = [];
+    if (req.body && req.body.syscoDates) {
+      if (Array.isArray(req.body.syscoDates)) {
+        syscoDates = req.body.syscoDates;
+      } else {
+        syscoDates = [req.body.syscoDates];
+      }
+    }
+
+    // US Foods-specific files with manual dates
+    const usFoodsFiles = req.files.usFoodsFiles
+      ? (Array.isArray(req.files.usFoodsFiles) ? req.files.usFoodsFiles : [req.files.usFoodsFiles])
+      : [];
+
+    // Multer parses non-file fields into req.body; usFoodsDates may be a string or array
+    let usFoodsDates = [];
+    if (req.body && req.body.usFoodsDates) {
+      if (Array.isArray(req.body.usFoodsDates)) {
+        usFoodsDates = req.body.usFoodsDates;
+      } else {
+        usFoodsDates = [req.body.usFoodsDates];
+      }
+    }
 
     // Extract reference products from reference sheet
     console.log('Processing reference sheet...');
@@ -802,6 +1884,54 @@ app.post('/api/vendor-costs', excelUpload.fields([
           await fs.unlink(vendorFile.path);
         } catch (unlinkError) {
           console.error('Error deleting file:', unlinkError);
+        }
+      }
+    }
+
+    // Extract data from Sysco files using manual dates (Column H = product, Column K = price)
+    if (syscoFiles.length > 0) {
+      console.log(`Processing ${syscoFiles.length} Sysco file(s) with manual dates...`);
+      for (let i = 0; i < syscoFiles.length; i++) {
+        const syscoFile = syscoFiles[i];
+        const manualDate = syscoDates[i] || new Date().toISOString().split('T')[0];
+        try {
+          console.log(`Processing Sysco file: ${syscoFile.originalname} with date ${manualDate}...`);
+          const extractedSysco = await extractSyscoDataFromExcel(syscoFile.path, syscoFile.originalname, manualDate);
+          allExtractedData.push(...extractedSysco);
+          await fs.unlink(syscoFile.path);
+        } catch (error) {
+          console.error(`Error processing Sysco file ${syscoFile.originalname}:`, error);
+          try {
+            await fs.unlink(syscoFile.path);
+          } catch (unlinkError) {
+            console.error('Error deleting Sysco file:', unlinkError);
+          }
+        }
+      }
+    }
+
+    // Extract data from US Foods files using manual dates (Column B = product, Column G = price)
+    if (usFoodsFiles.length > 0) {
+      console.log(`Processing ${usFoodsFiles.length} US Foods file(s) with manual dates...`);
+      for (let i = 0; i < usFoodsFiles.length; i++) {
+        const usFoodsFile = usFoodsFiles[i];
+        const manualDate = usFoodsDates[i] || new Date().toISOString().split('T')[0];
+        try {
+          console.log(`Processing US Foods file: ${usFoodsFile.originalname} with date ${manualDate}...`);
+          const extractedUsFoods = await extractUsFoodsDataFromExcel(
+            usFoodsFile.path,
+            usFoodsFile.originalname,
+            manualDate
+          );
+          allExtractedData.push(...extractedUsFoods);
+          await fs.unlink(usFoodsFile.path);
+        } catch (error) {
+          console.error(`Error processing US Foods file ${usFoodsFile.originalname}:`, error);
+          try {
+            await fs.unlink(usFoodsFile.path);
+          } catch (unlinkError) {
+            console.error('Error deleting US Foods file:', unlinkError);
+          }
         }
       }
     }

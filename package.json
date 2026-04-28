@@ -5,7 +5,13 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "build": "echo 'No build step required'"
+    "build": "echo 'No build step required'",
+    "pw:pfg": "playwright test -c playwright.config.js -g \"PFG\"",
+    "pw:gfs": "playwright test -c playwright.config.js -g \"GFS\"",
+    "pw:sysco": "playwright test -c playwright.config.js -g \"Sysco\"",
+    "pw:usfoods": "playwright test -c playwright.config.js -g \"US Foods\"",
+    "pw:biweekly-auto": "playwright test -c playwright.config.js -g \"Biweekly Auto\"",
+    "pw:verify-mapping": "playwright test -c playwright.config.js playwright/mapping-terms-against-downloads.spec.js"
   },
   "keywords": [],
   "author": "",
@@ -18,5 +24,8 @@
     "express": "^5.2.1",
     "multer": "^2.0.2",
     "openai": "^6.16.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1"
   }
 }
