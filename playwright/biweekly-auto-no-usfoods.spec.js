@@ -563,11 +563,43 @@ test('Biweekly Auto: download provider CSVs and generate order plan (no US foods
           .first();
         if (await exportItem.isVisible({ timeout: 6000 }).catch(() => false)) {
           lastExportItem = exportItem;
-          await exportItem.click({ timeout: 6000 }).catch(async () => {
-            await exportItem.evaluate((el) => el.click()).catch(() => {});
-          });
-          opened = true;
-          break;
+          // Sysco can open the dropdown but ignore the menu-item click. Retry until we see export UI.
+          const exportUiVisible = async () => {
+            const pricing = page.getByRole('switch', { name: /include pricing/i });
+            if (await pricing.isVisible({ timeout: 800 }).catch(() => false)) return true;
+            const modal = page
+              .locator('[role="dialog"], [role="alertdialog"]')
+              .filter({ hasText: /export|pricing|include/i })
+              .last();
+            if (await modal.isVisible({ timeout: 800 }).catch(() => false)) return true;
+            const exportBtn = page.getByRole('button', { name: /^export$/i });
+            if (await exportBtn.isVisible({ timeout: 800 }).catch(() => false)) return true;
+            return false;
+          };
+
+          for (let clickAttempt = 0; clickAttempt < 4; clickAttempt++) {
+            // eslint-disable-next-line no-await-in-loop
+            const ok =
+              (await exportItem.click({ timeout: 4000 }).then(() => true).catch(() => false)) ||
+              (await exportItem.evaluate((el) => el.click()).then(() => true).catch(() => false));
+            if (!ok) {
+              // eslint-disable-next-line no-await-in-loop
+              const box = await exportItem.boundingBox().catch(() => null);
+              if (box) {
+                // eslint-disable-next-line no-await-in-loop
+                await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2).catch(() => {});
+              }
+            }
+            // eslint-disable-next-line no-await-in-loop
+            await pause(700);
+            // eslint-disable-next-line no-await-in-loop
+            if (await exportUiVisible()) {
+              opened = true;
+              break;
+            }
+          }
+
+          if (opened) break;
         }
       }
       if (opened) break;
@@ -606,7 +638,31 @@ test('Biweekly Auto: download provider CSVs and generate order plan (no US foods
       }
     }
 
-    const clickTarget = blueExport || lastExportItem;
+    let clickTarget = blueExport || lastExportItem;
+
+    if (!clickTarget) {
+      for (const ctx of allContexts()) {
+        const candidate = ctx
+          .getByRole('menuitem', { name: /export\s*list/i })
+          .or(ctx.locator('li[data-id="export-list-btn"]'))
+          .or(ctx.getByRole('button', { name: /^export$/i }))
+          .or(ctx.getByRole('button', { name: /export\s*list/i }))
+          .or(ctx.getByText(/^\s*export\s*list\s*$/i))
+          .first();
+        // eslint-disable-next-line no-await-in-loop
+        if (await candidate.isVisible({ timeout: 1500 }).catch(() => false)) {
+          clickTarget = candidate;
+          break;
+        }
+      }
+    }
+
+    if (!clickTarget) {
+      throw new Error(
+        'Sysco: could not locate an Export / Export list button on page or any frame. The kebab menu likely never opened.'
+      );
+    }
+
     await expect(clickTarget, 'Could not find Sysco Export button/menu item').toBeVisible({ timeout: 45_000 });
     const out = await saveExportToFile(page, clickTarget, 'sysco-list.csv');
     await page.close().catch(() => {});
