@@ -11,6 +11,7 @@
     "pw:sysco": "playwright test -c playwright.config.js -g \"Sysco\"",
     "pw:usfoods": "playwright test -c playwright.config.js -g \"US Foods\"",
     "pw:biweekly-auto": "playwright test -c playwright.config.js -g \"Biweekly Auto\"",
+    "pw:biweekly-usfoods": "US_FOODS_ONLY=1 playwright test -c playwright.config.js -g \"Biweekly Auto\"",
     "pw:verify-mapping": "playwright test -c playwright.config.js playwright/mapping-terms-against-downloads.spec.js"
   },
   "keywords": [],
